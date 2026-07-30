@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a phone-side screenshot shortcut that opens the Windows snipping overlay.
+- Add an animated usage demo to the README.
+
 ## 1.0.0 — 2026-07-31
 
 - Android browser input over the local Wi-Fi network.
