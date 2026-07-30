@@ -1,0 +1,13 @@
+bin/
+obj/
+dist/
+package/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.log
+*.zip
+.DS_Store
+Thumbs.db
