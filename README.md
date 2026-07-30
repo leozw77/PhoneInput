@@ -1,5 +1,7 @@
 # PhoneInput / 手机输入到电脑
 
+![PhoneInput demo](docs/demo.gif)
+
 Use a phone's input method to type directly into the currently focused input
 field on a Windows PC. No Android or iPhone app is required. PhoneInput runs
 entirely on the local Wi-Fi network and does not use a cloud service.
@@ -15,6 +17,7 @@ entirely on the local Wi-Fi network and does not use a cloud service.
 - Insert, replace, delete, cut and drag-delete synchronization
 - Enter-to-submit or `Shift+Enter` newline behavior
 - Local QR code for quick phone connection
+- Phone shortcut for the Windows screenshot tool (`Win+Shift+S`)
 - Optional Windows startup
 - Android/iPhone home-screen metadata
 - Tray-only Windows application with no virtual keyboard

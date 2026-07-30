@@ -27,7 +27,9 @@ internal sealed class InputSender
         };
 
     public static bool IsSupportedKey(string key) =>
-        Keys.ContainsKey(key) || key.Equals("shift-enter", StringComparison.OrdinalIgnoreCase);
+        Keys.ContainsKey(key)
+        || key.Equals("shift-enter", StringComparison.OrdinalIgnoreCase)
+        || key.Equals("screenshot", StringComparison.OrdinalIgnoreCase);
 
     public async Task SendTextAsync(string text, int delayMs, CancellationToken cancellationToken)
     {
@@ -51,8 +53,9 @@ internal sealed class InputSender
     public async Task SendKeyAsync(string key, CancellationToken cancellationToken)
     {
         var shiftEnter = key.Equals("shift-enter", StringComparison.OrdinalIgnoreCase);
+        var screenshot = key.Equals("screenshot", StringComparison.OrdinalIgnoreCase);
         ushort virtualKey = 0;
-        if (!shiftEnter && !Keys.TryGetValue(key, out virtualKey))
+        if (!shiftEnter && !screenshot && !Keys.TryGetValue(key, out virtualKey))
             throw new ArgumentOutOfRangeException(nameof(key));
         await _gate.WaitAsync(cancellationToken);
         try
@@ -65,6 +68,18 @@ internal sealed class InputSender
                     KeyboardInput(0x0D, '\0', 0),
                     KeyboardInput(0x0D, '\0', KeyeventfKeyup),
                     KeyboardInput(0x10, '\0', KeyeventfKeyup)
+                });
+            }
+            else if (screenshot)
+            {
+                Send(new[]
+                {
+                    KeyboardInput(0x5B, '\0', KeyeventfExtendedkey), // Win down
+                    KeyboardInput(0x10, '\0', 0), // Shift down
+                    KeyboardInput(0x53, '\0', 0), // S down
+                    KeyboardInput(0x53, '\0', KeyeventfKeyup),
+                    KeyboardInput(0x10, '\0', KeyeventfKeyup),
+                    KeyboardInput(0x5B, '\0', KeyeventfExtendedkey | KeyeventfKeyup)
                 });
             }
             else SendVirtualKey(virtualKey);

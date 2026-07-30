@@ -66,6 +66,7 @@ internal static class MobilePage
       <button data-key="tab">Tab</button><button data-key="escape">Esc</button>
       <button data-key="left">←</button><button data-key="up">↑</button>
       <button data-key="down">↓</button><button data-key="right">→</button>
+      <button data-key="screenshot">📷 截图</button>
     </div>
     <p id="hint" class="hint">文字会进入电脑当前光标位置。发送前请确认电脑焦点位于正确的输入框。</p>
   </section>
