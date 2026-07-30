@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - Add a phone-side screenshot shortcut that opens the Windows snipping overlay.
 - Add an animated usage demo to the README.
