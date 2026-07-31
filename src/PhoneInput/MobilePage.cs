@@ -75,7 +75,7 @@ internal static class MobilePage
 <script>
   const $=s=>document.querySelector(s), text=$('#text'), state=$('#state'), target=$('#target'), toast=$('#toast');
   let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), installPrompt=null;
-  let currentTargetId='', lockedTargetId='', suppressSelectionUntil=0;
+  let currentTargetId='', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0;
   const graphemeSegmenter=typeof Intl.Segmenter==='function'
     ?new Intl.Segmenter(undefined,{granularity:'grapheme'}):null;
   function notice(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),1500)}
@@ -94,12 +94,21 @@ internal static class MobilePage
   $('#send').onclick=()=>send(true);$('#keep').onclick=()=>send(false);
   document.querySelectorAll('[data-key]').forEach(b=>b.onclick=async()=>{
     await request('/api/key/'+b.dataset.key,{method:'POST'});
-    if(realtime()&&b.dataset.key==='enter')text.value='';
+    if(realtime()&&b.dataset.key==='enter'){
+      text.value='';lockedTargetId='';sessionStarted=false;
+    }
     notice('已发送 '+b.textContent);
   });
   function enqueueText(value){
     if(!value)return;
-    if(realtime()&&currentTargetId)lockedTargetId=currentTargetId;
+    if(realtime()){
+      if(!sessionStarted){
+        if(!currentTargetId){notice('尚未检测到电脑目标窗口');return}
+        lockedTargetId=currentTargetId;sessionStarted=true;
+      }else if(!lockedTargetId||currentTargetId!==lockedTargetId){
+        notice('电脑目标窗口已变化，已暂停输入');return;
+      }
+    }
     const delayMs=+$('#speed').value;
     queue=queue.then(()=>request('/api/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,delayMs})})).catch(()=>{});
   }
@@ -110,8 +119,10 @@ internal static class MobilePage
     return Array.from(prefix).length;
   }
   function enqueueSelection(start,end){
-    if(currentTargetId)lockedTargetId=currentTargetId;
-    if(!lockedTargetId){notice('尚未检测到电脑目标窗口');return}
+    if(!sessionStarted||!text.value)return;
+    if(!lockedTargetId||currentTargetId!==lockedTargetId){
+      notice('电脑目标窗口已变化，已暂停光标同步');return;
+    }
     queue=queue.then(()=>request('/api/selection',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -122,11 +133,11 @@ internal static class MobilePage
     })).then(()=>{state.textContent='光标已同步'}).catch(()=>{});
   }
   function scheduleSelectionSync(force=false,delay=40){
-    if(!realtime()||composing||document.activeElement!==text)return;
+    if(!realtime()||!sessionStarted||!text.value||composing||document.activeElement!==text)return;
     if(!force&&Date.now()<suppressSelectionUntil)return;
     clearTimeout(selectionTimer);
     selectionTimer=setTimeout(()=>{
-      if(!realtime()||composing||document.activeElement!==text)return;
+      if(!realtime()||!sessionStarted||!text.value||composing||document.activeElement!==text)return;
       enqueueSelection(text.selectionStart??0,text.selectionEnd??0);
     },delay);
   }
@@ -146,7 +157,7 @@ internal static class MobilePage
   }
   $('#mode').onchange=()=>{
     const active=realtime();
-    lockedTargetId=active?currentTargetId:'';
+    lockedTargetId='';sessionStarted=false;
     $('#card').classList.toggle('realtime',active);
     $('#enterAfter').parentElement.style.display=active?'none':'';
     $('#enterModeWrap').style.display=active?'':'none';
@@ -184,7 +195,7 @@ internal static class MobilePage
         suppressSelectionUntil=Date.now()+180;
         notice('已换行');
       }else{
-        enqueueKey('enter');text.value='';notice('已发送回车');
+        enqueueKey('enter');text.value='';lockedTargetId='';sessionStarted=false;notice('已发送回车');
       }
     }
     else if(event.inputType==='deleteContentBackward'){
@@ -214,11 +225,11 @@ internal static class MobilePage
   text.addEventListener('pointerup',()=>scheduleSelectionSync(true,30));
   text.addEventListener('touchend',()=>scheduleSelectionSync(true,40),{passive:true});
   $('#clearLocal').onclick=()=>{
-    text.blur();composing=false;text.value='';
+    text.blur();composing=false;text.value='';lockedTargetId='';sessionStarted=false;
     setTimeout(()=>{text.value='';text.focus()},80);
     notice('手机输入区已清空');
   };
-  $('#realtimeEnter').onclick=()=>{enqueueKey('enter');text.value='';text.focus();notice('已发送回车')};
+  $('#realtimeEnter').onclick=()=>{enqueueKey('enter');text.value='';lockedTargetId='';sessionStarted=false;text.focus();notice('已发送回车')};
   window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
   $('#install').onclick=async()=>{
     if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null}
@@ -227,7 +238,6 @@ internal static class MobilePage
   async function refresh(){
     try{
       const r=await request('/api/status');const x=await r.json();currentTargetId=x.targetId||'';
-      if(realtime()&&!lockedTargetId)lockedTargetId=currentTargetId;
       const changed=realtime()&&lockedTargetId&&currentTargetId!==lockedTargetId;
       target.textContent=(changed?'⚠ 目标已变化：':'当前目标：')+x.target;
       target.style.color=changed?'#ffb86b':'';
@@ -262,12 +272,16 @@ internal static class MobilePage
 """;
 
     public const string ServiceWorker = """
-const CACHE='phone-input-v1';
+const CACHE='phone-input-v1.1.1';
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/manifest.webmanifest','/icon.svg'])));
   self.skipWaiting();
 });
-self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+self.addEventListener('activate',event=>event.waitUntil(
+  caches.keys()
+    .then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))))
+    .then(()=>self.clients.claim())
+));
 self.addEventListener('fetch',event=>{
   if(event.request.method!=='GET')return;
   event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)));
