@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1
+
+- Do not send caret or selection keys when the phone input area is empty.
+- Start target locking only after the first text input, preventing clicks on the
+  phone input area from controlling video players or non-editable PC windows.
+- Keep the original target lock when the foreground window changes.
+
 ## 1.1.0
 
 - Add a phone-side screenshot shortcut that opens the Windows snipping overlay.
