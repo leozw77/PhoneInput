@@ -4,6 +4,11 @@ using System.Text;
 
 namespace PhoneInput;
 
+internal sealed class InputTargetChangedException : Exception
+{
+    public InputTargetChangedException() : base("The foreground input target changed during the operation.") { }
+}
+
 internal sealed class InputSender
 {
     private const uint InputKeyboard = 1;
@@ -31,7 +36,7 @@ internal sealed class InputSender
         || key.Equals("shift-enter", StringComparison.OrdinalIgnoreCase)
         || key.Equals("screenshot", StringComparison.OrdinalIgnoreCase);
 
-    public async Task SendTextAsync(string text, int delayMs, CancellationToken cancellationToken)
+    public async Task SendTextAsync(string text, int delayMs, CancellationToken cancellationToken, Func<bool>? targetValidator = null)
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -39,6 +44,7 @@ internal sealed class InputSender
             foreach (var rune in text.EnumerateRunes())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                EnsureTarget(targetValidator);
                 foreach (var character in rune.ToString())
                     SendUnicode(character);
                 if (delayMs > 0) await Task.Delay(delayMs, cancellationToken);
@@ -50,7 +56,7 @@ internal sealed class InputSender
         }
     }
 
-    public async Task SendKeyAsync(string key, CancellationToken cancellationToken)
+    public async Task SendKeyAsync(string key, CancellationToken cancellationToken, Func<bool>? targetValidator = null)
     {
         var shiftEnter = key.Equals("shift-enter", StringComparison.OrdinalIgnoreCase);
         var screenshot = key.Equals("screenshot", StringComparison.OrdinalIgnoreCase);
@@ -60,6 +66,7 @@ internal sealed class InputSender
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            EnsureTarget(targetValidator);
             if (shiftEnter)
             {
                 Send(new[]
@@ -87,13 +94,14 @@ internal sealed class InputSender
         finally { _gate.Release(); }
     }
 
-    public async Task SetSelectionAsync(int start, int end, CancellationToken cancellationToken)
+    public async Task SetSelectionAsync(int start, int end, CancellationToken cancellationToken, Func<bool>? targetValidator = null)
     {
         start = Math.Max(0, start);
         end = Math.Max(start, end);
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            EnsureTarget(targetValidator);
             var inputs = new List<INPUT>(8 + end * 2)
             {
                 KeyboardInput(0x11, '\0', 0), // Ctrl down
@@ -164,6 +172,12 @@ internal sealed class InputSender
         var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
         if (sent != inputs.Length)
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Windows 没有接受输入事件");
+    }
+
+    private static void EnsureTarget(Func<bool>? targetValidator)
+    {
+        if (targetValidator is not null && !targetValidator())
+            throw new InputTargetChangedException();
     }
 
     [DllImport("user32.dll", SetLastError = true)]

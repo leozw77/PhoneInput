@@ -28,7 +28,7 @@ internal static class MobilePage
     button:active{transform:scale(.97)}.primary{background:var(--accent);font-weight:700}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:12px}.keys button{font-size:14px}
     .realtime-tools{display:none}.realtime .actions{display:none}.realtime .realtime-tools{display:grid}
-    .hint{color:var(--muted);font-size:12px;line-height:1.5;margin:12px 3px 0}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#f4f7ff;color:#111827;padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.2s}.toast.show{opacity:1}
+    .hint{color:var(--muted);font-size:12px;line-height:1.5;margin:12px 3px 0}.sync{display:none;margin:10px 0 0 auto;padding:7px 10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px}.realtime .sync{display:block}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#f4f7ff;color:#111827;padding:10px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.2s}.toast.show{opacity:1}
   </style>
 </head>
 <body>
@@ -61,6 +61,7 @@ internal static class MobilePage
       <button id="clearLocal">清空手机输入区</button>
       <button id="realtimeEnter" class="primary">↵ 回车</button>
     </div>
+    <button id="syncDesktop" class="sync">&#x4ECE;&#x7535;&#x8111;&#x540C;&#x6B65;</button>
     <div class="keys">
       <button data-key="backspace">⌫ 退格</button><button data-key="enter">↵ 回车</button>
       <button data-key="tab">Tab</button><button data-key="escape">Esc</button>
@@ -75,10 +76,63 @@ internal static class MobilePage
 <script>
   const $=s=>document.querySelector(s), text=$('#text'), state=$('#state'), target=$('#target'), toast=$('#toast');
   let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), installPrompt=null;
-  let currentTargetId='', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0;
+  let currentTargetId='', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0;
+  let drafts={};
+  const draftStorageKey='phoneInputDrafts-v1.2.1';
   const graphemeSegmenter=typeof Intl.Segmenter==='function'
     ?new Intl.Segmenter(undefined,{granularity:'grapheme'}):null;
   function notice(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),1500)}
+  function loadDrafts(){try{drafts=JSON.parse(localStorage.getItem(draftStorageKey)||'{}')||{}}catch{drafts={}}}
+  function saveDraft(targetId){
+    if(!targetId)return;
+    drafts[targetId]={value:text.value,start:text.selectionStart??0,end:text.selectionEnd??0,controlId:drafts[targetId]?.controlId||''};
+    localStorage.setItem(draftStorageKey,JSON.stringify(drafts));
+  }
+  function restoreDraft(targetId){
+    const draft=drafts[targetId];
+    if(!draft)return false;
+    text.value=String(draft.value||'');
+    const start=Math.min(Math.max(0,+draft.start||0),text.value.length);
+    const end=Math.min(Math.max(start,+draft.end||start),text.value.length);
+    text.setSelectionRange(start,end);
+    return true;
+  }
+  function clearSession(){clearTimeout(selectionTimer);lockedTargetId='';sessionStarted=false}
+  function invalidateQueue(){queueGeneration++}
+  async function syncDesktopState(targetId,force=false,showNotice=false,allowActive=false,expectedControlId=''){
+    if(!targetId)return false;
+    const serial=transitionSerial;
+    const expectedValue=text.value,expectedStart=text.selectionStart??0,expectedEnd=text.selectionEnd??0;
+    try{
+      const r=await request('/api/input-state');const x=await r.json();
+      if(serial!==transitionSerial||x.targetId!==targetId||!x.supported)return false;
+      if(!force&&sessionStarted&&!allowActive)return false;
+      if(!force&&expectedControlId&&x.controlId!==expectedControlId)return false;
+      if(allowActive&&(
+        text.value!==expectedValue||
+        (text.selectionStart??0)!==expectedStart||
+        (text.selectionEnd??0)!==expectedEnd))return false;
+      text.value=x.text||'';
+      const start=Math.min(Math.max(0,+x.selectionStart||0),text.value.length);
+      const end=Math.min(Math.max(start,+x.selectionEnd||start),text.value.length);
+      text.setSelectionRange(start,end);
+      drafts[targetId]={value:text.value,start,end,controlId:x.controlId||''};
+      localStorage.setItem(draftStorageKey,JSON.stringify(drafts));
+      if(showNotice)notice('Desktop input synchronized');
+      return true;
+    }catch{return false}
+  }
+  async function switchTarget(previousTargetId,nextTargetId){
+    const serial=++transitionSerial;
+    if(previousTargetId&&previousTargetId!==nextTargetId)saveDraft(previousTargetId);
+    invalidateQueue();clearSession();
+    text.value='';
+    const draft=drafts[nextTargetId],hasDraft=restoreDraft(nextTargetId);
+    if(hasDraft&&text.value){lockedTargetId=nextTargetId;sessionStarted=true}
+    if(hasDraft)await syncDesktopState(nextTargetId,false,false,true,draft?.controlId||'');
+    if(serial!==transitionSerial)return;
+    text.focus();
+  }
   async function request(url,options){
     try{const r=await fetch(url,options);if(!r.ok){let x=await r.json().catch(()=>({}));throw new Error(x.error||'请求失败')}state.textContent='已连接';return r}
     catch(e){state.textContent='连接断开';notice(e.message);throw e}
@@ -93,7 +147,8 @@ internal static class MobilePage
   }
   $('#send').onclick=()=>send(true);$('#keep').onclick=()=>send(false);
   document.querySelectorAll('[data-key]').forEach(b=>b.onclick=async()=>{
-    await request('/api/key/'+b.dataset.key,{method:'POST'});
+    const targetQuery=realtime()?'?targetId='+encodeURIComponent(currentTargetId):'';
+    await request('/api/key/'+b.dataset.key+targetQuery,{method:'POST'});
     if(realtime()&&b.dataset.key==='enter'){
       text.value='';lockedTargetId='';sessionStarted=false;
     }
@@ -109,10 +164,17 @@ internal static class MobilePage
         notice('电脑目标窗口已变化，已暂停输入');return;
       }
     }
-    const delayMs=+$('#speed').value;
-    queue=queue.then(()=>request('/api/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,delayMs})})).catch(()=>{});
+    const delayMs=+$('#speed').value,generation=queueGeneration,targetId=currentTargetId;
+    queue=queue.then(()=>generation===queueGeneration
+      ?request('/api/text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:value,delayMs,targetId:realtime()?targetId:null})})
+      :undefined).catch(()=>{});
   }
-  function enqueueKey(key){queue=queue.then(()=>request('/api/key/'+key,{method:'POST'})).catch(()=>{})}
+  function enqueueKey(key){
+    const generation=queueGeneration,targetId=currentTargetId;
+    queue=queue.then(()=>generation===queueGeneration
+      ?request('/api/key/'+key+'?targetId='+encodeURIComponent(targetId),{method:'POST'})
+      :undefined).catch(()=>{});
+  }
   function caretSteps(value,utf16Offset){
     const prefix=value.slice(0,utf16Offset);
     if(graphemeSegmenter)return Array.from(graphemeSegmenter.segment(prefix)).length;
@@ -123,7 +185,8 @@ internal static class MobilePage
     if(!lockedTargetId||currentTargetId!==lockedTargetId){
       notice('电脑目标窗口已变化，已暂停光标同步');return;
     }
-    queue=queue.then(()=>request('/api/selection',{
+    const generation=queueGeneration;
+    queue=queue.then(()=>generation===queueGeneration&&request('/api/selection',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         start:caretSteps(text.value,start),
@@ -157,6 +220,7 @@ internal static class MobilePage
   }
   $('#mode').onchange=()=>{
     const active=realtime();
+    invalidateQueue();
     lockedTargetId='';sessionStarted=false;
     $('#card').classList.toggle('realtime',active);
     $('#enterAfter').parentElement.style.display=active?'none':'';
@@ -225,11 +289,12 @@ internal static class MobilePage
   text.addEventListener('pointerup',()=>scheduleSelectionSync(true,30));
   text.addEventListener('touchend',()=>scheduleSelectionSync(true,40),{passive:true});
   $('#clearLocal').onclick=()=>{
-    text.blur();composing=false;text.value='';lockedTargetId='';sessionStarted=false;
+    invalidateQueue();text.blur();composing=false;text.value='';lockedTargetId='';sessionStarted=false;
     setTimeout(()=>{text.value='';text.focus()},80);
     notice('手机输入区已清空');
   };
   $('#realtimeEnter').onclick=()=>{enqueueKey('enter');text.value='';lockedTargetId='';sessionStarted=false;text.focus();notice('已发送回车')};
+  $('#syncDesktop').onclick=async()=>{if(realtime())await syncDesktopState(currentTargetId,true,true)};
   window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
   $('#install').onclick=async()=>{
     if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null}
@@ -237,13 +302,16 @@ internal static class MobilePage
   };
   async function refresh(){
     try{
-      const r=await request('/api/status');const x=await r.json();currentTargetId=x.targetId||'';
+      const r=await request('/api/status');const x=await r.json();
+      const nextTargetId=x.targetId||'',previousTargetId=currentTargetId;
+      currentTargetId=nextTargetId;
+      if(realtime()&&nextTargetId!==previousTargetId)await switchTarget(previousTargetId,nextTargetId);
       const changed=realtime()&&lockedTargetId&&currentTargetId!==lockedTargetId;
       target.textContent=(changed?'⚠ 目标已变化：':'当前目标：')+x.target;
       target.style.color=changed?'#ffb86b':'';
     }catch{}
   }
-  loadSettings();$('#mode').onchange();
+  loadSettings();loadDrafts();$('#mode').onchange();
   if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
   refresh();setInterval(refresh,2000);
 </script>
@@ -272,7 +340,7 @@ internal static class MobilePage
 """;
 
     public const string ServiceWorker = """
-const CACHE='phone-input-v1.1.1';
+const CACHE='phone-input-v1.2.0';
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/manifest.webmanifest','/icon.svg'])));
   self.skipWaiting();

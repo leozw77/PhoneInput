@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -80,6 +81,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 var targetId = ForegroundWindow.GetId();
                 return Results.Ok(new { connected = true, target, targetId });
             });
+            app.MapGet("/api/input-state", () => Results.Ok(DesktopInputStateReader.ReadCurrent()));
             app.MapPost("/api/text", async (TextRequest request, CancellationToken cancellationToken) =>
             {
                 if (string.IsNullOrEmpty(request.Text))
@@ -87,16 +89,38 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 if (request.Text.Length > 20_000)
                     return Results.BadRequest(new { error = "一次最多发送 20000 个字符" });
 
-                await input.SendTextAsync(request.Text, Math.Clamp(request.DelayMs ?? 3, 0, 50), cancellationToken);
+                if (!IsCurrentTarget(request.TargetId))
+                    return Results.Conflict(new { error = "target changed" });
+                Func<bool>? targetValidator = request.TargetId is null ? null : () => IsCurrentTarget(request.TargetId);
+                try
+                {
+                    await input.SendTextAsync(request.Text, Math.Clamp(request.DelayMs ?? 3, 0, 50), cancellationToken, targetValidator);
+                }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 if (request.EnterAfter == true)
-                    await input.SendKeyAsync("enter", cancellationToken);
+                {
+                    try { await input.SendKeyAsync("enter", cancellationToken, targetValidator); }
+                    catch (InputTargetChangedException)
+                    {
+                        return Results.Conflict(new { error = "target changed" });
+                    }
+                }
                 return Results.Ok(new { sent = request.Text.Length });
             });
-            app.MapPost("/api/key/{key}", async (string key, CancellationToken cancellationToken) =>
+            app.MapPost("/api/key/{key}", async (string key, string? targetId, CancellationToken cancellationToken) =>
             {
                 if (!InputSender.IsSupportedKey(key))
                     return Results.BadRequest(new { error = "不支持这个按键" });
-                await input.SendKeyAsync(key, cancellationToken);
+                if (!IsCurrentTarget(targetId))
+                    return Results.Conflict(new { error = "target changed" });
+                try { await input.SendKeyAsync(key, cancellationToken, () => IsCurrentTarget(targetId)); }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 return Results.Ok();
             });
             app.MapPost("/api/selection", async (SelectionRequest request, CancellationToken cancellationToken) =>
@@ -107,7 +131,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 if (request.Start < 0 || request.End < request.Start || request.End > 20_000)
                     return Results.BadRequest(new { error = "光标位置无效" });
 
-                await input.SetSelectionAsync(request.Start, request.End, cancellationToken);
+                try { await input.SetSelectionAsync(request.Start, request.End, cancellationToken, () => IsCurrentTarget(request.TargetId)); }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 return Results.Ok();
             });
 
@@ -250,6 +278,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
                b[0] == 172 && b[1] is >= 16 and <= 31;
     }
 
-    private sealed record TextRequest(string Text, int? DelayMs, bool? EnterAfter);
+    private static bool IsCurrentTarget(string? targetId) =>
+        targetId is null || string.Equals(targetId, ForegroundWindow.GetId(), StringComparison.OrdinalIgnoreCase);
+
+    private sealed record TextRequest(string Text, int? DelayMs, bool? EnterAfter, string? TargetId);
     private sealed record SelectionRequest(int Start, int End, string TargetId);
 }

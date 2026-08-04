@@ -6,6 +6,8 @@ namespace PhoneInput;
 
 internal static class ForegroundWindow
 {
+    public static IntPtr GetHandle() => GetForegroundWindow();
+
     public static string GetId()
     {
         var handle = GetForegroundWindow();

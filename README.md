@@ -101,6 +101,7 @@ entirely on the local Wi-Fi network and does not use a cloud service.
 - Windows 10 or Windows 11, x64
 - Android or iPhone on the same Wi-Fi as the PC
 - A modern mobile browser
+- The release ZIP requires the .NET 8 Desktop Runtime
 
 Android Chrome is the most thoroughly tested browser. Safari on iPhone should
 support the basic workflow, but input-method and selection details can differ.
