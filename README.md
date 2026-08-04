@@ -151,11 +151,12 @@ Install the .NET 8 SDK, then run:
 dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
-  --self-contained true --no-restore -o .\dist
+  --self-contained false --no-restore -o .\dist
 ```
 
-The self-contained executable is intentionally large because it includes the
-.NET runtime.
+The release package is framework-dependent and requires the .NET 8 Desktop
+Runtime already installed on Windows. The default local-network service port
+is `51876`.
 
 ### Privacy
 

@@ -15,7 +15,9 @@ namespace PhoneInput;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private const int DefaultPort = 8765;
+    // Keep the service on a dedicated five-digit port so it is less likely to
+    // collide with another local development service.
+    private const int DefaultPort = 51876;
     private readonly NotifyIcon _icon;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly int _port;

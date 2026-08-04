@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2026-08-05
+
+- Move the default local-network service to dedicated port `51876`.
+- Keep the framework-dependent release small and compatible with the installed
+  .NET 8 Desktop Runtime.
+
 ## 1.2.0 - 2026-08-05
 
 - Keep a separate phone draft and caret position for each Windows target window.
