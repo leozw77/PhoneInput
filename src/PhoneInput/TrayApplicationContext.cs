@@ -20,6 +20,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private const int DefaultPort = 51876;
     private readonly NotifyIcon _icon;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly System.Windows.Forms.Timer _foregroundTimer;
     private readonly int _port;
     private readonly IReadOnlyList<string> _urls;
     private WebApplication? _server;
@@ -52,6 +53,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true
         };
         _icon.DoubleClick += (_, _) => ShowAddress();
+
+        // Sample the desktop from the interactive WinForms thread. The web
+        // server runs on thread-pool threads and must not be the source of
+        // truth for foreground-window state.
+        ForegroundWindow.Refresh();
+        _foregroundTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _foregroundTimer.Tick += (_, _) => ForegroundWindow.Refresh();
+        _foregroundTimer.Start();
 
         _ = StartServerAsync();
     }
@@ -221,6 +230,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private async Task ExitAsync()
     {
         _icon.Visible = false;
+        _foregroundTimer.Stop();
+        _foregroundTimer.Dispose();
         _shutdown.Cancel();
         if (_server is not null)
         {
@@ -236,6 +247,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _shutdown.Cancel();
+            _foregroundTimer.Stop();
+            _foregroundTimer.Dispose();
             _shutdown.Dispose();
             _icon.Dispose();
         }

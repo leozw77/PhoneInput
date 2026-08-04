@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2 - 2026-08-05
+
+- Sample the foreground window from the interactive tray UI thread so target
+  detection remains available to the HTTP service thread.
+
 ## 1.2.1 - 2026-08-05
 
 - Move the default local-network service to dedicated port `51876`.

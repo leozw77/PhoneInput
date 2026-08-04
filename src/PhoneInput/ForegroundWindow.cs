@@ -6,17 +6,28 @@ namespace PhoneInput;
 
 internal static class ForegroundWindow
 {
-    public static IntPtr GetHandle() => GetForegroundWindow();
+    private static IntPtr _cachedHandle;
+
+    // GetForegroundWindow can return zero when called from a background
+    // server thread on a different desktop context. Refresh this value from
+    // the WinForms UI thread and let HTTP handlers consume the cached value.
+    public static void Refresh() => Interlocked.Exchange(ref _cachedHandle, GetForegroundWindow());
+
+    public static IntPtr GetHandle()
+    {
+        var handle = Interlocked.CompareExchange(ref _cachedHandle, IntPtr.Zero, IntPtr.Zero);
+        return handle != IntPtr.Zero ? handle : GetForegroundWindow();
+    }
 
     public static string GetId()
     {
-        var handle = GetForegroundWindow();
+        var handle = GetHandle();
         return handle == IntPtr.Zero ? string.Empty : handle.ToInt64().ToString("X");
     }
 
     public static string GetDescription()
     {
-        var handle = GetForegroundWindow();
+        var handle = GetHandle();
         if (handle == IntPtr.Zero) return "未检测到输入目标";
 
         var titleLength = GetWindowTextLength(handle);
