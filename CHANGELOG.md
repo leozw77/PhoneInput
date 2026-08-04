@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3 - 2026-08-05
+
+- Enforce a strict single-instance lock across elevated and normal launches.
+- Exit duplicate launches immediately instead of leaving invisible tray or
+  port-owning background instances.
+
 ## 1.2.2 - 2026-08-05
 
 - Sample the foreground window from the interactive tray UI thread so target
