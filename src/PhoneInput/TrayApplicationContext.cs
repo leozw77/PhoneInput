@@ -29,8 +29,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _port = ReadPort(args);
         _urls = GetLanAddresses(_port);
+        PhoneInputLog.Info("startup", $"port={_port}; lanUrls={string.Join(',', _urls)}");
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("打开诊断日志", null, (_, _) => OpenLog());
         menu.Items.Add("手机输入：正在启动", null, (_, _) => ShowAddress())!.Name = "status";
         menu.Items.Add("显示连接二维码", null, (_, _) => ShowQrCode());
         menu.Items.Add("显示访问地址", null, (_, _) => ShowAddress());
@@ -94,9 +96,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return Results.Ok(new { connected = true, target, targetId, targetType });
             });
             app.MapGet("/api/input-state", () => Results.Ok(DesktopInputStateReader.ReadCurrent()));
-            app.MapPost("/api/window-switch/{target}", (string target) =>
+            app.MapPost("/api/window-switch/{target}", async (string target, CancellationToken cancellationToken) =>
             {
-                var result = ForegroundWindow.TryActivate(target);
+                var result = await ForegroundWindow.TryActivateAsync(target, cancellationToken);
                 if (result.Success)
                     return Results.Ok(result);
                 if (!result.Found)
@@ -167,13 +169,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(AppContext.BaseDirectory, "PhoneInput.log"),
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\r\n");
-            }
-            catch { }
+            PhoneInputLog.Error("startup", ex);
             SetStatus("手机输入：启动失败");
             _icon.ShowBalloonTip(5000, "手机输入启动失败", ex.Message, ToolTipIcon.Error);
         }
@@ -187,6 +183,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
         if (_icon.ContextMenuStrip?.Items["status"] is ToolStripItem item) item.Text = text;
+    }
+
+    private void OpenLog()
+    {
+        PhoneInputLog.Info("diagnostics", "open-log");
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "notepad.exe",
+                Arguments = $"\"{PhoneInputLog.LogPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            PhoneInputLog.Error("diagnostics", ex);
+            MessageBox.Show(
+                $"日志路径：\n{PhoneInputLog.LogPath}\n\n{ex.Message}",
+                "无法打开诊断日志",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
     }
 
     private void ShowAddress()

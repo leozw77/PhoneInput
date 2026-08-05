@@ -8,5 +8,13 @@ using var singleInstance = new Mutex(initiallyOwned: true, SingleInstanceName, o
 if (!ownsInstance)
     return;
 
+PhoneInputLog.Start();
 ApplicationConfiguration.Initialize();
-Application.Run(new TrayApplicationContext(args));
+try
+{
+    Application.Run(new TrayApplicationContext(args));
+}
+finally
+{
+    await PhoneInputLog.StopAsync();
+}

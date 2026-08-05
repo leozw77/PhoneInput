@@ -8,7 +8,14 @@ internal static class ForegroundWindow
 {
     private static IntPtr _cachedHandle;
 
-    internal sealed record WindowSwitchResult(bool Success, bool Found, string? Target, string? Description);
+    internal sealed record WindowSwitchResult(
+        bool Success,
+        bool Found,
+        string? Target,
+        string? Description,
+        string? TargetId,
+        string? ActualForegroundId,
+        string? FailureReason);
 
     // GetForegroundWindow can return zero when called from a background
     // server thread on a different desktop context. Refresh this value from
@@ -20,6 +27,8 @@ internal static class ForegroundWindow
         var handle = Interlocked.CompareExchange(ref _cachedHandle, IntPtr.Zero, IntPtr.Zero);
         return handle != IntPtr.Zero ? handle : GetForegroundWindow();
     }
+
+    public static IntPtr GetActualHandle() => GetForegroundWindow();
 
     public static string GetId()
     {
@@ -72,7 +81,9 @@ internal static class ForegroundWindow
         return title.Length > 0 ? $"{process} · {title}" : process;
     }
 
-    public static WindowSwitchResult TryActivate(string target)
+    public static async Task<WindowSwitchResult> TryActivateAsync(
+        string target,
+        CancellationToken cancellationToken = default)
     {
         var criteria = target.ToLowerInvariant() switch
         {
@@ -83,23 +94,80 @@ internal static class ForegroundWindow
         };
 
         if (criteria is null)
-            return new WindowSwitchResult(false, false, target, null);
+            return Failure(target, false, null, "unsupported-target");
 
         var candidate = FindWindow(criteria);
         if (candidate == IntPtr.Zero)
-            return new WindowSwitchResult(false, false, target, null);
-
-        if (IsIconic(candidate))
-            _ = ShowWindow(candidate, ShowNormal);
-
-        var activated = SetForegroundWindow(candidate);
-        if (activated)
         {
-            Interlocked.Exchange(ref _cachedHandle, candidate);
-            return new WindowSwitchResult(true, true, target, Describe(candidate));
+            PhoneInputLog.Warn("window-switch", $"target={target}; result=not-found");
+            return Failure(target, false, null, "not-found");
         }
 
-        return new WindowSwitchResult(false, true, target, Describe(candidate));
+        var targetId = ToId(candidate);
+        var description = Describe(candidate);
+        PhoneInputLog.Info("window-switch", $"target={target}; candidate={targetId}; description={description}");
+
+        var requested = false;
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var actual = GetForegroundWindow();
+            var actualId = ToId(actual);
+            if (actual == candidate)
+            {
+                Interlocked.Exchange(ref _cachedHandle, candidate);
+                PhoneInputLog.Info(
+                    "window-switch",
+                    $"target={target}; result=success; attempt={attempt}; requested={requested}; actual={actualId}");
+                return new WindowSwitchResult(true, true, target, description, targetId, actualId, null);
+            }
+
+            requested = RequestActivation(candidate) || requested;
+
+            PhoneInputLog.Warn(
+                "window-switch",
+                $"target={target}; result=pending; attempt={attempt}; requested={requested}; actual={actualId}");
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+
+        var finalId = ToId(GetForegroundWindow());
+        PhoneInputLog.Warn(
+            "window-switch",
+            $"target={target}; result=failed; requested={requested}; expected={targetId}; actual={finalId}");
+        return new WindowSwitchResult(false, true, target, description, targetId, finalId, "foreground-not-confirmed");
+    }
+
+    private static WindowSwitchResult Failure(
+        string target,
+        bool found,
+        string? description,
+        string reason) =>
+        new(false, found, target, description, null, ToId(GetForegroundWindow()), reason);
+
+    private static bool RequestActivation(IntPtr candidate)
+    {
+        var foreground = GetForegroundWindow();
+        var foregroundThreadId = foreground == IntPtr.Zero
+            ? 0u
+            : GetWindowThreadProcessId(foreground, out _);
+        var currentThreadId = GetCurrentThreadId();
+        var attached = false;
+
+        try
+        {
+            if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+                attached = AttachThreadInput(currentThreadId, foregroundThreadId, true);
+
+            if (IsIconic(candidate))
+                _ = ShowWindow(candidate, ShowNormal);
+            _ = BringWindowToTop(candidate);
+            return SetForegroundWindow(candidate);
+        }
+        finally
+        {
+            if (attached)
+                _ = AttachThreadInput(currentThreadId, foregroundThreadId, false);
+        }
     }
 
     private static IntPtr FindWindow(WindowCriteria criteria)
@@ -150,6 +218,9 @@ internal static class ForegroundWindow
         return title.ToString();
     }
 
+    private static string ToId(IntPtr handle) =>
+        handle == IntPtr.Zero ? string.Empty : handle.ToInt64().ToString("X");
+
     private static bool IsBrowserProcess(string processName) =>
         processName.Equals("chrome", StringComparison.OrdinalIgnoreCase) ||
         processName.Equals("msedge", StringComparison.OrdinalIgnoreCase) ||
@@ -191,4 +262,13 @@ internal static class ForegroundWindow
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 }

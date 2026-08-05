@@ -85,7 +85,7 @@ internal static class MobilePage
 <div id="toast" class="toast"></div>
 <script>
   const $=s=>document.querySelector(s), text=$('#text'), state=$('#state'), target=$('#target'), toast=$('#toast');
-  let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), installPrompt=null;
+  let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), refreshQueue=Promise.resolve(), installPrompt=null;
   let currentTargetId='', currentTargetType='other', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0;
   let drafts={};
   const draftStorageKey='phoneInputDrafts-v1.2.1';
@@ -113,24 +113,29 @@ internal static class MobilePage
     if(!targetId)return false;
     const serial=transitionSerial;
     const expectedValue=text.value,expectedStart=text.selectionStart??0,expectedEnd=text.selectionEnd??0;
-    try{
-      const r=await request('/api/input-state');const x=await r.json();
-      if(serial!==transitionSerial||x.targetId!==targetId||!x.supported)return false;
-      if(!force&&sessionStarted&&!allowActive)return false;
-      if(!force&&expectedControlId&&x.controlId!==expectedControlId)return false;
-      if(allowActive&&(
-        text.value!==expectedValue||
-        (text.selectionStart??0)!==expectedStart||
-        (text.selectionEnd??0)!==expectedEnd))return false;
-      text.value=x.text||'';
-      const start=Math.min(Math.max(0,+x.selectionStart||0),text.value.length);
-      const end=Math.min(Math.max(start,+x.selectionEnd||start),text.value.length);
-      text.setSelectionRange(start,end);
-      drafts[targetId]={value:text.value,start,end,controlId:x.controlId||''};
-      localStorage.setItem(draftStorageKey,JSON.stringify(drafts));
-      if(showNotice)notice('Desktop input synchronized');
-      return true;
-    }catch{return false}
+    for(let attempt=0;attempt<4;attempt++){
+      try{
+        if(attempt)await new Promise(resolve=>setTimeout(resolve,80));
+        const r=await request('/api/input-state');const x=await r.json();
+        if(serial!==transitionSerial||x.targetId!==targetId)return false;
+        if(!x.supported){if(attempt<3)continue;return false}
+        if(!force&&sessionStarted&&!allowActive)return false;
+        if(!force&&expectedControlId&&x.controlId!==expectedControlId)return false;
+        if(allowActive&&(
+          text.value!==expectedValue||
+          (text.selectionStart??0)!==expectedStart||
+          (text.selectionEnd??0)!==expectedEnd))return false;
+        text.value=x.text||'';
+        const start=Math.min(Math.max(0,+x.selectionStart||0),text.value.length);
+        const end=Math.min(Math.max(start,+x.selectionEnd||start),text.value.length);
+        text.setSelectionRange(start,end);
+        drafts[targetId]={value:text.value,start,end,controlId:x.controlId||''};
+        localStorage.setItem(draftStorageKey,JSON.stringify(drafts));
+        if(showNotice)notice('Desktop input synchronized');
+        return true;
+      }catch{if(attempt===3)return false}
+    }
+    return false;
   }
   async function switchTarget(previousTargetId,nextTargetId,nextTargetType='other'){
     const serial=++transitionSerial;
@@ -139,8 +144,10 @@ internal static class MobilePage
     text.value='';
     const draft=drafts[nextTargetId],hasDraft=restoreDraft(nextTargetId);
     if(hasDraft&&text.value){lockedTargetId=nextTargetId;sessionStarted=true}
-    if(['chatgpt','wechat','chrome'].includes(nextTargetType))
-      await syncDesktopState(nextTargetId,false,false,hasDraft,draft?.controlId||'');
+    if(['chatgpt','wechat','chrome'].includes(nextTargetType)){
+      const synced=await syncDesktopState(nextTargetId,false,false,hasDraft,draft?.controlId||'');
+      if(!synced&&serial===transitionSerial)notice('当前目标输入框暂不支持自动读取');
+    }
     if(serial!==transitionSerial)return;
     text.focus();
   }
@@ -324,19 +331,24 @@ internal static class MobilePage
     }catch{}
     finally{buttons.forEach(x=>x.disabled=false)}
   });
-  async function refresh(windowSwitch=false){
+  async function refreshCore(windowSwitch=false){
     try{
       const r=await request('/api/status');const x=await r.json();
       const nextTargetId=x.targetId||'',previousTargetId=currentTargetId;
       const nextTargetType=x.targetType||'other';
       currentTargetId=nextTargetId;
       currentTargetType=nextTargetType;
-      if((realtime()||windowSwitch)&&nextTargetId!==previousTargetId)
+      if((realtime()&&nextTargetId!==previousTargetId)||(windowSwitch&&nextTargetId))
         await switchTarget(previousTargetId,nextTargetId,nextTargetType);
       const changed=realtime()&&lockedTargetId&&currentTargetId!==lockedTargetId;
       target.textContent=(changed?'⚠ 目标已变化：':'当前目标：')+x.target;
       target.style.color=changed?'#ffb86b':'';
     }catch{}
+  }
+  function refresh(windowSwitch=false){
+    const next=refreshQueue.then(()=>refreshCore(windowSwitch));
+    refreshQueue=next.catch(()=>{});
+    return next;
   }
   loadSettings();loadDrafts();$('#mode').onchange();
   if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -367,7 +379,7 @@ internal static class MobilePage
 """;
 
     public const string ServiceWorker = """
-const CACHE='phone-input-v1.2.0';
+const CACHE='phone-input-v1.2.5-preview';
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/manifest.webmanifest','/icon.svg'])));
   self.skipWaiting();

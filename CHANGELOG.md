@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.5-preview
+
+- Add bounded asynchronous diagnostic logging under the user's local application data.
+- Record window activation, focused-control metadata, read source, retry state, and
+  failure reasons without recording input text by default.
+- Reject Chromium page-root text such as ChatGPT `RootWebArea` content before it can
+  be synchronized as desktop input.
+
 ## 1.2.4 - 2026-08-06
 
 - Add phone controls for switching the foreground window to an already-open
