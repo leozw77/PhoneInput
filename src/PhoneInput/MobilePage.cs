@@ -17,7 +17,7 @@ internal static class MobilePage
     :root{color-scheme:dark;--bg:#0b1020;--card:#151c2e;--line:#2a3550;--text:#f4f7ff;--muted:#9ca9c2;--accent:#6d8cff;--good:#42d392}
     *{box-sizing:border-box}body{margin:0;background:linear-gradient(150deg,#111a34,var(--bg) 55%);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
     main{width:min(720px,100%);margin:auto;padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
-    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:22px;margin:0}.state{font-size:13px;color:var(--good)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:22px;margin:0}h1::after{content:" · v1.2.5-preview";font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}.state{font-size:13px;color:var(--good)}
     .target{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px}
     .window-tools{display:flex;gap:8px;align-items:center;margin:0 0 12px}
     .window-switcher{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1}
