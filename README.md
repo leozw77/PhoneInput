@@ -67,10 +67,11 @@ Android Chrome 经过了最充分的测试。iPhone Safari 可以完成基本输
 dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
-  --self-contained true --no-restore -o .\dist
+  --self-contained false --no-restore -o .\dist
 ```
 
-自包含版本包含 .NET 运行时，因此文件体积较大。
+发布包必须使用 framework-dependent 模式；目标电脑已安装 .NET 8 Desktop Runtime，禁止使用 `--self-contained true`，禁止把 .NET 运行时打进 ZIP。
+底层规则：项目文件必须保持 `SelfContained=false`，发布命令必须使用 `--self-contained false`；任何包含 .NET 运行时的自包含包都不得作为发布包。
 
 ### 编译与发布硬性验收
 
@@ -186,6 +187,9 @@ program is usable in practice; a successful compilation alone is not completion.
 - The executable, version, port, QR address, and documentation in the release
   ZIP must match the current build. A file tested only from `src\bin` must not be
   treated as the release package.
+- When the target computer already has the .NET 8 Desktop Runtime, keep
+  `SelfContained=false` and use `--self-contained false`. Never generate or ship
+  a self-contained ZIP with the .NET runtime bundled inside.
 - Keep stable release directories and tags rollback-safe; never overwrite a
   stable release when preview validation fails.
 
