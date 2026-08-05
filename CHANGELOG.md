@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.4 - 2026-08-06
+
+- Add phone controls for switching the foreground window to an already-open
+  ChatGPT desktop app, Chrome window, or WeChat window.
+- Keep window switching explicit; the app is never started automatically.
+- Read desktop text and caret after an explicit switch only when the focused
+  control is supported; Chrome address bars and ordinary web pages remain
+  excluded.
+
 ## 1.2.3 - 2026-08-05
 
 - Enforce a strict single-instance lock across elevated and normal launches.

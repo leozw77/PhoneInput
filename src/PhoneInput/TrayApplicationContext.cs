@@ -90,9 +90,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 var target = ForegroundWindow.GetDescription();
                 var targetId = ForegroundWindow.GetId();
-                return Results.Ok(new { connected = true, target, targetId });
+                var targetType = ForegroundWindow.GetTargetKind();
+                return Results.Ok(new { connected = true, target, targetId, targetType });
             });
             app.MapGet("/api/input-state", () => Results.Ok(DesktopInputStateReader.ReadCurrent()));
+            app.MapPost("/api/window-switch/{target}", (string target) =>
+            {
+                var result = ForegroundWindow.TryActivate(target);
+                if (result.Success)
+                    return Results.Ok(result);
+                if (!result.Found)
+                    return Results.NotFound(new { error = $"{target} 未启动或没有可切换的窗口" });
+                return Results.Conflict(new { error = $"{target} 窗口切换失败，请稍后重试" });
+            });
             app.MapPost("/api/text", async (TextRequest request, CancellationToken cancellationToken) =>
             {
                 if (string.IsNullOrEmpty(request.Text))

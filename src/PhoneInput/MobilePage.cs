@@ -19,7 +19,10 @@ internal static class MobilePage
     main{width:min(720px,100%);margin:auto;padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
     header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:22px;margin:0}.state{font-size:13px;color:var(--good)}
     .target{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px}
-    .install{display:block;margin:0 0 12px auto;padding:7px 10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px}
+    .window-tools{display:flex;gap:8px;align-items:center;margin:0 0 12px}
+    .window-switcher{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1}
+    .window-switcher button{padding:10px 6px;font-size:14px;white-space:nowrap}
+    .install{display:block;margin:0;padding:7px 10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px;flex:0 0 auto}
     .card{background:rgba(21,28,46,.94);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 16px 50px #0005}
     textarea{display:block;width:100%;min-height:210px;resize:vertical;border:0;outline:0;border-radius:12px;background:#0e1528;color:var(--text);padding:15px;font:18px/1.55 system-ui}
     textarea::placeholder{color:#71809e}.options{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 2px;color:var(--muted);font-size:14px}
@@ -35,7 +38,14 @@ internal static class MobilePage
 <main>
   <header><h1>手机输入到电脑</h1><span id="state" class="state">正在连接</span></header>
   <div id="target" class="target">正在读取电脑当前窗口…</div>
-  <button id="install" class="install">添加到主屏幕</button>
+  <div class="window-tools">
+    <div class="window-switcher" aria-label="切换电脑前台窗口">
+      <button data-window-target="chatgpt">ChatGPT</button>
+      <button data-window-target="chrome">Chrome</button>
+      <button data-window-target="wechat">微信</button>
+    </div>
+    <button id="install" class="install">添加到主屏幕</button>
+  </div>
   <section id="card" class="card">
     <textarea id="text" autofocus placeholder="在这里使用手机输入法输入文字…"></textarea>
     <div class="options">
@@ -76,7 +86,7 @@ internal static class MobilePage
 <script>
   const $=s=>document.querySelector(s), text=$('#text'), state=$('#state'), target=$('#target'), toast=$('#toast');
   let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), installPrompt=null;
-  let currentTargetId='', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0;
+  let currentTargetId='', currentTargetType='other', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0;
   let drafts={};
   const draftStorageKey='phoneInputDrafts-v1.2.1';
   const graphemeSegmenter=typeof Intl.Segmenter==='function'
@@ -122,14 +132,15 @@ internal static class MobilePage
       return true;
     }catch{return false}
   }
-  async function switchTarget(previousTargetId,nextTargetId){
+  async function switchTarget(previousTargetId,nextTargetId,nextTargetType='other'){
     const serial=++transitionSerial;
     if(previousTargetId&&previousTargetId!==nextTargetId)saveDraft(previousTargetId);
     invalidateQueue();clearSession();
     text.value='';
     const draft=drafts[nextTargetId],hasDraft=restoreDraft(nextTargetId);
     if(hasDraft&&text.value){lockedTargetId=nextTargetId;sessionStarted=true}
-    if(hasDraft)await syncDesktopState(nextTargetId,false,false,true,draft?.controlId||'');
+    if(['chatgpt','wechat','chrome'].includes(nextTargetType))
+      await syncDesktopState(nextTargetId,false,false,hasDraft,draft?.controlId||'');
     if(serial!==transitionSerial)return;
     text.focus();
   }
@@ -300,12 +311,28 @@ internal static class MobilePage
     if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null}
     else notice('请打开浏览器菜单，选择“添加到主屏幕”');
   };
-  async function refresh(){
+  const windowTargetLabels={chatgpt:'ChatGPT',chrome:'Chrome',wechat:'微信'};
+  document.querySelectorAll('[data-window-target]').forEach(button=>button.onclick=async()=>{
+    const targetName=button.dataset.windowTarget;
+    if(!targetName)return;
+    const buttons=[...document.querySelectorAll('[data-window-target]')];
+    buttons.forEach(x=>x.disabled=true);
+    try{
+      await request('/api/window-switch/'+encodeURIComponent(targetName),{method:'POST'});
+      await refresh(true);
+      notice('已切换到'+(windowTargetLabels[targetName]||targetName));
+    }catch{}
+    finally{buttons.forEach(x=>x.disabled=false)}
+  });
+  async function refresh(windowSwitch=false){
     try{
       const r=await request('/api/status');const x=await r.json();
       const nextTargetId=x.targetId||'',previousTargetId=currentTargetId;
+      const nextTargetType=x.targetType||'other';
       currentTargetId=nextTargetId;
-      if(realtime()&&nextTargetId!==previousTargetId)await switchTarget(previousTargetId,nextTargetId);
+      currentTargetType=nextTargetType;
+      if((realtime()||windowSwitch)&&nextTargetId!==previousTargetId)
+        await switchTarget(previousTargetId,nextTargetId,nextTargetType);
       const changed=realtime()&&lockedTargetId&&currentTargetId!==lockedTargetId;
       target.textContent=(changed?'⚠ 目标已变化：':'当前目标：')+x.target;
       target.style.color=changed?'#ffb86b':'';
