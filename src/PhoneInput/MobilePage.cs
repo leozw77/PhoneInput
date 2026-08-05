@@ -17,7 +17,7 @@ internal static class MobilePage
     :root{color-scheme:dark;--bg:#0b1020;--card:#151c2e;--line:#2a3550;--text:#f4f7ff;--muted:#9ca9c2;--accent:#6d8cff;--good:#42d392}
     *{box-sizing:border-box}body{margin:0;background:linear-gradient(150deg,#111a34,var(--bg) 55%);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh}
     main{width:min(720px,100%);margin:auto;padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
-    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:22px;margin:0}h1::after{content:" · v1.2.5-preview";font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}.state{font-size:13px;color:var(--good)}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}h1{font-size:22px;margin:0}h1::after{content:" · v1.2.5";font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}.state{font-size:13px;color:var(--good)}
     .target{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:8px}
     .window-tools{display:flex;gap:8px;align-items:center;margin:0 0 12px}
     .window-switcher{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1}
@@ -86,7 +86,7 @@ internal static class MobilePage
 <script>
   const $=s=>document.querySelector(s), text=$('#text'), state=$('#state'), target=$('#target'), toast=$('#toast');
   let busy=false, toastTimer, selectionTimer, composing=false, queue=Promise.resolve(), refreshQueue=Promise.resolve(), installPrompt=null;
-  let currentTargetId='', currentTargetType='other', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0;
+  let currentTargetId='', currentTargetType='other', lockedTargetId='', sessionStarted=false, suppressSelectionUntil=0, transitionSerial=0, queueGeneration=0, manualCopyPendingTargetId='';
   let drafts={};
   const draftStorageKey='phoneInputDrafts-v1.2.1';
   const graphemeSegmenter=typeof Intl.Segmenter==='function'
@@ -109,18 +109,53 @@ internal static class MobilePage
   }
   function clearSession(){clearTimeout(selectionTimer);lockedTargetId='';sessionStarted=false}
   function invalidateQueue(){queueGeneration++}
-  async function syncDesktopState(targetId,force=false,showNotice=false,allowActive=false,expectedControlId=''){
+  async function readDesktopState(targetId,requestSource,copyBack=false){
+    const query='?targetId='+encodeURIComponent(targetId)+'&source='+encodeURIComponent(requestSource)+(copyBack?'&copyBack=true':'');
+    try{
+      const r=await fetch('/api/input-state'+query);const x=await r.json().catch(()=>({}));
+      state.textContent='已连接';
+      if(!r.ok&&x.reason!=='target-mismatch')throw new Error(x.error||x.reason||'读取失败');
+      return x;
+    }catch(e){state.textContent='连接断开';throw e}
+  }
+  async function syncDesktopState(targetId,force=false,showNotice=false,allowActive=false,expectedControlId='',requestSource='automatic',copyBack=false){
     if(!targetId)return false;
     const serial=transitionSerial;
     const expectedValue=text.value,expectedStart=text.selectionStart??0,expectedEnd=text.selectionEnd??0;
-    for(let attempt=0;attempt<4;attempt++){
+    const maxAttempts=requestSource==='manual'?1:4;
+    for(let attempt=0;attempt<maxAttempts;attempt++){
       try{
         if(attempt)await new Promise(resolve=>setTimeout(resolve,80));
-        const r=await request('/api/input-state');const x=await r.json();
-        if(serial!==transitionSerial||x.targetId!==targetId)return false;
-        if(!x.supported){if(attempt<3)continue;return false}
+        const x=await readDesktopState(targetId,requestSource,copyBack);
+        if(serial!==transitionSerial||currentTargetId!==targetId||x.targetId!==targetId){
+          if(showNotice)notice('电脑目标窗口已变化，未覆盖手机输入');
+          manualCopyPendingTargetId='';
+          return false;
+        }
+        if(x.reason==='target-mismatch'){
+          if(showNotice)notice('电脑目标窗口已变化，未覆盖手机输入');
+          manualCopyPendingTargetId='';
+          return false;
+        }
+        if(!x.supported){
+          if(requestSource==='manual'&&x.reason==='google-search-pattern-unavailable'&&!copyBack){
+            manualCopyPendingTargetId=targetId;
+            return false;
+          }
+          if(copyBack&&requestSource==='manual'&&x.reason==='google-search-pattern-unavailable'){
+            manualCopyPendingTargetId='';
+            if(showNotice)notice('未能读取电脑剪贴板内容');
+            return false;
+          }
+          if(attempt<maxAttempts-1)continue;
+          return false;
+        }
         if(!force&&sessionStarted&&!allowActive)return false;
-        if(!force&&expectedControlId&&x.controlId!==expectedControlId)return false;
+        if(expectedControlId&&x.controlId!==expectedControlId){
+          if(showNotice)notice('电脑输入控件已变化，未覆盖手机输入');
+          manualCopyPendingTargetId='';
+          return false;
+        }
         if(allowActive&&(
           text.value!==expectedValue||
           (text.selectionStart??0)!==expectedStart||
@@ -131,9 +166,10 @@ internal static class MobilePage
         text.setSelectionRange(start,end);
         drafts[targetId]={value:text.value,start,end,controlId:x.controlId||''};
         localStorage.setItem(draftStorageKey,JSON.stringify(drafts));
+        manualCopyPendingTargetId='';
         if(showNotice)notice('Desktop input synchronized');
         return true;
-      }catch{if(attempt===3)return false}
+      }catch(e){if(attempt===maxAttempts-1){if(showNotice)notice(e.message||'读取电脑输入失败');return false}}
     }
     return false;
   }
@@ -141,11 +177,12 @@ internal static class MobilePage
     const serial=++transitionSerial;
     if(previousTargetId&&previousTargetId!==nextTargetId)saveDraft(previousTargetId);
     invalidateQueue();clearSession();
+    if(previousTargetId!==nextTargetId)manualCopyPendingTargetId='';
     text.value='';
     const draft=drafts[nextTargetId],hasDraft=restoreDraft(nextTargetId);
     if(hasDraft&&text.value){lockedTargetId=nextTargetId;sessionStarted=true}
     if(['chatgpt','wechat','chrome'].includes(nextTargetType)){
-      const synced=await syncDesktopState(nextTargetId,false,false,hasDraft,draft?.controlId||'');
+      const synced=await syncDesktopState(nextTargetId,false,false,hasDraft,draft?.controlId||'','automatic');
       if(!synced&&serial===transitionSerial)notice('当前目标输入框暂不支持自动读取');
     }
     if(serial!==transitionSerial)return;
@@ -312,7 +349,19 @@ internal static class MobilePage
     notice('手机输入区已清空');
   };
   $('#realtimeEnter').onclick=()=>{enqueueKey('enter');text.value='';lockedTargetId='';sessionStarted=false;text.focus();notice('已发送回车')};
-  $('#syncDesktop').onclick=async()=>{if(realtime())await syncDesktopState(currentTargetId,true,true)};
+  $('#syncDesktop').onclick=async()=>{
+    if(!realtime())return;
+    try{
+      await refresh();
+      const targetId=currentTargetId;
+      if(!targetId){notice('尚未检测到电脑目标窗口');return}
+      const expectedControlId=drafts[targetId]?.controlId||'';
+      const copyBack=manualCopyPendingTargetId===targetId;
+      const synced=await syncDesktopState(targetId,true,true,false,expectedControlId,'manual',copyBack);
+      if(!synced&&manualCopyPendingTargetId===targetId)
+        notice('请在电脑端手动复制搜索框内容，再点一次同步');
+    }catch{}
+  };
   window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
   $('#install').onclick=async()=>{
     if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null}
@@ -379,7 +428,7 @@ internal static class MobilePage
 """;
 
     public const string ServiceWorker = """
-const CACHE='phone-input-v1.2.5-preview';
+const CACHE='phone-input-v1.2.5';
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/manifest.webmanifest','/icon.svg'])));
   self.skipWaiting();

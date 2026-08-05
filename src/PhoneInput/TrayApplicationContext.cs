@@ -95,7 +95,33 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 var targetType = ForegroundWindow.GetTargetKind();
                 return Results.Ok(new { connected = true, target, targetId, targetType });
             });
-            app.MapGet("/api/input-state", () => Results.Ok(DesktopInputStateReader.ReadCurrent()));
+            app.MapGet("/api/input-state", (string? targetId, string? source, bool? copyBack) =>
+            {
+                var expectedTargetId = targetId?.Trim() ?? string.Empty;
+                if (expectedTargetId.Length == 0)
+                    return Results.BadRequest(new { error = "targetId is required", reason = "target-id-required" });
+
+                var requestSource = string.Equals(source, "manual", StringComparison.OrdinalIgnoreCase)
+                    ? "manual"
+                    : "automatic";
+                var allowClipboardFallback = requestSource == "manual" && copyBack == true;
+                PhoneInputLog.Info(
+                    "sync-read",
+                    $"phase=start; requestSource={requestSource}; targetId={expectedTargetId}; copyBack={allowClipboardFallback}");
+
+                var state = DesktopInputStateReader.ReadCurrent(
+                    expectedTargetId,
+                    allowGoogleSearchComboBox: requestSource == "manual",
+                    allowClipboardFallback);
+                var textLength = state.Supported ? state.Text.Length : 0;
+                PhoneInputLog.Info(
+                    "sync-read",
+                    $"phase=end; result={(state.Supported ? "success" : "failed")}; requestSource={requestSource}; targetId={expectedTargetId}; actualTargetId={state.TargetId}; control={state.ControlId}; reason={state.Reason}; source={state.Source}; textLength={textLength}");
+
+                if (state.Reason == "target-mismatch")
+                    return Results.Conflict(state);
+                return Results.Ok(state);
+            });
             app.MapPost("/api/window-switch/{target}", async (string target, CancellationToken cancellationToken) =>
             {
                 var result = await ForegroundWindow.TryActivateAsync(target, cancellationToken);

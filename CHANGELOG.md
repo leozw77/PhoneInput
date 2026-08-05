@@ -1,12 +1,20 @@
 # Changelog
 
-## 1.2.5-preview
+## 1.2.5 - 2026-08-06
 
+- Promote the tested preview changes to the stable release.
+
+- Fix ChatGPT Desktop automatic synchronization treating the empty editor's `Do anything` placeholder as user text. The placeholder is now treated as empty only for the ChatGPT Desktop target, so switching to an empty ChatGPT editor clears the phone input without copying the placeholder.
 - Add bounded asynchronous diagnostic logging under the user's local application data.
 - Record window activation, focused-control metadata, read source, retry state, and
   failure reasons without recording input text by default.
 - Reject Chromium page-root text such as ChatGPT `RootWebArea` content before it can
   be synchronized as desktop input.
+- Fence desktop reads with the requested foreground target and avoid applying a
+  read when the target or focused control changed during the request.
+- Allow only manual, exact Google Chrome `APjFqb`/`gLFyf` reads to probe
+  `ValuePattern`/`TextPattern`; provide an explicit manual clipboard fallback
+  without issuing background `Ctrl+A`/`Ctrl+C`.
 
 ## 1.2.4 - 2026-08-06
 

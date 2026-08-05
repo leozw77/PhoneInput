@@ -72,6 +72,18 @@ dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
 
 自包含版本包含 .NET 运行时，因此文件体积较大。
 
+### 编译与发布硬性验收
+
+每次更新、重新编译或打包后，必须证明程序能够实际使用；编译成功不等于完成。
+
+- 启动本次生成的确切 `PhoneInputEnhanced.exe`，确认托盘程序正常运行并监听当前 LAN 地址和端口。
+- 使用同一 Wi-Fi 下的 Android 手机实际打开 `http://<电脑局域网 IP>:51876/`，确认页面能加载、`/api/status` 可访问，并完成一次真实输入回归。
+- 检查与本次 exe 完整路径匹配的 Windows 防火墙入站规则：必须启用并允许 **Private** 网络；不能只检查回环地址或其他历史版本路径。
+- 发布 ZIP 中的 exe、版本号、端口、二维码地址和说明必须与本次构建一致；不得把仅在源码 `bin` 目录验证过的文件直接当作发布包。
+- 稳定版目录和 tag 必须保持可回滚；preview 验证失败时不得覆盖稳定版。
+
+只有以上真实运行、手机局域网访问和输入回归都通过，才可以称为本次更新可用。
+
 ### 隐私
 
 PhoneInput 不包含账号系统、数据分析或云端中转。文字只会通过局域网从手机浏览器发送到
@@ -157,6 +169,28 @@ dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
 The release package is framework-dependent and requires the .NET 8 Desktop
 Runtime already installed on Windows. The default local-network service port
 is `51876`.
+
+### Mandatory build and release acceptance
+
+Every update, rebuild, or package operation must prove that the resulting
+program is usable in practice; a successful compilation alone is not completion.
+
+- Launch the exact `PhoneInputEnhanced.exe` produced by the current build and
+  confirm that the tray app runs and listens on the current LAN address and port.
+- From an Android phone on the same Wi-Fi, open
+  `http://<PC-LAN-IP>:51876/`, verify that the page and `/api/status` load, and
+  complete one real input regression.
+- Check the Windows inbound firewall rule for the exact executable path: it must
+  be enabled and allow the **Private** profile. Do not rely only on loopback
+  access or rules for historical versions.
+- The executable, version, port, QR address, and documentation in the release
+  ZIP must match the current build. A file tested only from `src\bin` must not be
+  treated as the release package.
+- Keep stable release directories and tags rollback-safe; never overwrite a
+  stable release when preview validation fails.
+
+Only after real runtime, phone LAN access, and input regression all pass may the
+update be described as usable.
 
 ### Privacy
 
