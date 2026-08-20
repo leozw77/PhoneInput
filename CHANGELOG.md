@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 Native Stable - 2026-08-09
+
+- Integrate the Native Android + Windows stable line under `native/`.
+- Add the Windows x64 package, Android APKs, and SHA-256 verification records
+  under `Release/v1.4.0-native/`.
+- Add the Native 1.4.0 development baseline and handoff rules under `docs/`.
+- Preserve the supplied implementation summary and the historical v1.2.5
+  C#/.NET stable line for rollback.
+- Document that Native Android is included, while readback remains incomplete,
+  browser/CRX deep readback is deferred, and real device acceptance is still
+  bounded by the known limitations.
+
 ## 1.2.5 - 2026-08-06
 
 - Promote the tested preview changes to the stable release.

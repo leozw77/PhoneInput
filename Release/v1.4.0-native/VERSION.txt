@@ -1,0 +1,6 @@
+PhoneInputEnhanced 1.4.0
+
+Windows Host: native 1.4.0
+Android client: native 1.4.0
+Legacy embedded Core/browser baseline: preview.9 (frozen compatibility component)
+Protocol: v2 + legacy browser API compatibility

@@ -4,6 +4,28 @@
 
 [中文](#中文介绍) · [English](#english)
 
+## 当前最新版：Native 1.4.0
+
+当前主线是 **Windows Native Host + Android 原生客户端**，版本为 `1.4.0`（2026-08-09）。
+旧的 C#/.NET 浏览器客户端仍保留在 `src/`，作为历史兼容和回滚线，不再代表最新版。
+
+发布内容位于 [`Release/v1.4.0-native`](Release/v1.4.0-native)：
+
+- Windows x64 Native 包：触控板、鼠标手势、键盘/文字输入、窗口切换、截图、文件传输、图片中转栏、诊断和旧浏览器兼容入口。
+- Android Kotlin 原生客户端：单指移动/点击/拖动、双指右键/滚动、原生文字输入、批量与即时输入、输入法语音中转、图片/文件分享。
+- Android Debug APK 和未签名 Release APK；正式发布前仍需使用正式 keystore 签名。
+- Native Protocol v2，保留旧协议兼容。
+
+### 当前未完成与已知限制
+
+- **回读功能仍然很不完善**：只能在部分目标控件和应用中 best effort 工作；Chrome/浏览器页面、CRX 深度回读和复杂富文本回读仍未完成，不能按“完整回读”宣传。
+- Android 真机安装升级、锁屏/切后台/断网恢复，以及百度、搜狗、Gboard 等输入法兼容性仍需继续实机验证。
+- 图片中转栏在不同 DPI/多显示器上的显示，以及拖入实际 ChatGPT/Chrome 页面尚未完成完整验收。
+- Windows Downloads 被重定向或由 OneDrive 接管时，Known Folder 兼容性仍待修复。
+- Release APK 当前是未签名包；Native 版本的部分 Windows 输入/热键集成测试在受限环境中失败，不能写成“全部测试通过”。
+
+详细功能清单、验证边界和后续优先级见 [`docs/PHONEINPUT_V1.4.0_RELEASE_NOTES.md`](docs/PHONEINPUT_V1.4.0_RELEASE_NOTES.md)。
+
 ## 中文介绍
 
 使用手机输入法，直接向 Windows 当前获得焦点的输入框输入文字。无需安装手机 App，

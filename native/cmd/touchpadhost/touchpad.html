@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b1020">
+<title>PhoneInput 触控板</title>
+<link rel="stylesheet" href="/assets/input-component.css">
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--card:#151c2e;--line:#2a3550;--text:#f4f7ff;--muted:#9ca9c2;--accent:#6d8cff;--good:#42d392;--warn:#ffb86b;--danger:#ff7b8b;--visual-height:100dvh}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:linear-gradient(150deg,#111a34,var(--bg) 55%);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overscroll-behavior:none}
+body{padding:calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));user-select:none}
+main{width:min(820px,100%);height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));margin:auto;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto auto auto;gap:7px}
+.top{display:grid;gap:6px}.topPrimary{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:7px}.topWindows{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.topWindows button{padding:8px 6px;background:#263752;border-color:#3c527d;font-weight:650}.brand{min-width:0}.title{font-weight:760;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.version{font-size:10px;color:var(--muted);font-weight:400}.state{font-size:11px;color:var(--warn);margin-top:1px}
+button,a{border:1px solid var(--line);border-radius:10px;background:#26324d;color:var(--text);padding:9px 11px;font:13px system-ui;text-decoration:none;text-align:center;white-space:nowrap;touch-action:manipulation}button:active,a:active{transform:scale(.97)}button:disabled{opacity:.52;transform:none}.keyboardButton{background:#303d5d}.legacyInputButton{background:#263752;border-color:#3c527d}.topIconLabel{display:inline}
+.pad{position:relative;min-width:0;min-height:0;height:100%;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:radial-gradient(circle at 50% 40%,#1c2845,#0e1528 70%);box-shadow:0 12px 40px #0005;touch-action:none}
+.pad::before{content:"单指移动 · 轻触单击 · 按住拖动\A双指滚动 · 双指长按键盘";white-space:pre;text-align:center;position:absolute;inset:50% 10px auto;transform:translateY(-50%);font-size:14px;line-height:1.75;color:#71809e;pointer-events:none}.pad.interacted::before{opacity:.28}
+.dot{position:absolute;width:32px;height:32px;margin:-16px;border-radius:50%;background:#6d8cff55;border:1px solid #91a6ff;pointer-events:none;display:none}.padHint{position:absolute;left:10px;right:10px;bottom:8px;text-align:center;font-size:11px;color:#7f8eac;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shortcuts{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.shortcuts button{padding:9px 5px;background:#202b43}.shortcuts button:disabled{opacity:.55}
+.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}.controls button{padding:12px 5px}.controls .active{background:var(--accent);font-weight:700}
+.settingsPanel{display:none;border:1px solid var(--line);border-radius:12px;background:#121a2d;padding:9px}.settingsPanel.open{display:block}.settings{display:grid;grid-template-columns:auto minmax(70px,1fr) auto;gap:8px;align-items:center;color:var(--muted);font-size:12px}.settings+.settings{margin-top:7px}.settings input[type=range]{width:100%;margin:0}.settings select{width:100%;min-width:78px;border:1px solid var(--line);border-radius:8px;background:#0e1528;color:var(--text);padding:6px}.checks{display:flex;gap:14px;align-items:center;justify-content:flex-end;color:var(--muted);font-size:12px;margin-top:8px;flex-wrap:wrap}.checks label{white-space:nowrap}
+.footer{display:flex;justify-content:space-between;gap:8px;align-items:center;color:var(--muted);font-size:11px;min-height:33px}.footer button{padding:7px 10px}.hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-height:610px){body{padding-top:5px;padding-bottom:5px}main{height:calc(100dvh - 10px - env(safe-area-inset-top) - env(safe-area-inset-bottom));gap:5px}.footer{display:none}.shortcuts button{padding:7px 4px}.controls button{padding:9px 4px}.title{font-size:16px}}
+@media(max-width:470px){.topPrimary{grid-template-columns:minmax(0,1fr) auto auto auto}.topPrimary button,.topPrimary a{padding:8px 8px}.topWindows button{padding:7px 4px;font-size:12px}.version{display:block}.controls button{font-size:12px}.keyboardButton .keyboardLabel{display:none}.legacyInputButton{font-size:12px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div class="topPrimary">
+      <div class="brand">
+        <div class="title">手机触控板 <span class="version">v1.3.0-preview.9</span></div>
+        <div id="state" class="state">正在连接</div>
+      </div>
+      <button id="keyboardButton" class="keyboardButton" type="button" aria-label="打开触控板内置文字输入"><span aria-hidden="true">⌨</span> <span class="keyboardLabel">键盘</span></button>
+      <a id="legacyInputButton" class="legacyInputButton" href="/input/" aria-label="切换到原文字输入界面">输入页</a>
+      <button id="settingsToggle" type="button">设置</button>
+    </div>
+    <div id="topWindows" class="topWindows" aria-label="快速切换电脑窗口">
+      <button type="button" data-inline-window="chatgpt" aria-label="切换到 ChatGPT">ChatGPT</button>
+      <button type="button" data-inline-window="chrome" aria-label="切换到 Chrome">Chrome</button>
+      <button type="button" data-inline-window="wechat" aria-label="切换到微信">微信</button>
+    </div>
+  </div>
+
+  <div id="pad" class="pad" aria-label="触控板区域">
+    <i id="dot1" class="dot"></i><i id="dot2" class="dot"></i><i id="dot3" class="dot"></i>
+    <span id="padHint" class="padHint">请保持手机和电脑连接同一局域网</span>
+  </div>
+
+  <div class="shortcuts" aria-label="触控板快捷操作">
+    <button type="button" data-pad-shortcut="screenshot">截图</button>
+    <button type="button" data-pad-shortcut="copy">复制</button>
+    <button type="button" data-pad-shortcut="paste">粘贴</button>
+  </div>
+
+  <div class="controls">
+    <button data-click="left">左键</button>
+    <button data-click="right">右键</button>
+    <button data-click="middle">中键</button>
+    <button id="drag">拖动锁定</button>
+  </div>
+
+  <div id="settingsPanel" class="settingsPanel">
+    <div class="settings"><span>灵敏度</span><input id="sensitivity" type="range" min="0.6" max="5" step="0.1" value="2.3"><span id="sensitivityValue">2.30×</span></div>
+    <div class="settings"><span>滚动</span><input id="scrollSpeed" type="range" min="2" max="14" step="1" value="7"><span id="scrollValue">7×</span></div>
+    <div class="settings"><span>惯性强度</span><select id="inertiaStrength"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option></select><span>实验</span></div>
+    <div class="checks">
+      <label><input id="acceleration" type="checkbox" checked> 移动加速</label>
+      <label><input id="natural" type="checkbox" checked> 自然滚动</label>
+      <label><input id="inertiaEnabled" type="checkbox" checked> 惯性滚动</label>
+    </div>
+  </div>
+
+  <div class="footer"><span id="hint" class="hint">单指按住后移动可拖动 · 双指长按约 0.5 秒打开键盘</span><button id="release">释放按键</button></div>
+</main>
+
+<script src="/assets/input-component.js"></script>
+<script>
+(()=>{
+'use strict';
+
+const $=selector=>document.querySelector(selector);
+const pad=$('#pad'),state=$('#state'),hint=$('#hint'),padHint=$('#padHint');
+const dots=[$('#dot1'),$('#dot2'),$('#dot3')];
+
+const GestureState=Object.freeze({
+  Idle:'Idle',TapCandidate:'TapCandidate',SingleMove:'SingleMove',LongPress:'LongPress',
+  DoubleTapDrag:'DoubleTapDrag',PressDrag:'PressDrag',TwoFingerPending:'TwoFingerPending',TwoFingerScroll:'TwoFingerScroll',TwoFingerHold:'TwoFingerHold',
+  Suppressed:'Suppressed',TextInputOpen:'TextInputOpen',WindowSwitcherOpen:'WindowSwitcherOpen',DragLocked:'DragLocked'
+});
+
+const gesture={
+  state:GestureState.Idle,pointers:new Map(),suppressed:new Set(),two:null,
+  longTimer:0,longTriggered:false,secondTap:false,dragArmTimer:0,dragArmed:false,dragKind:'',dragHeld:false,dragLocked:false,
+  moveDX:0,moveDY:0,moveScheduled:false,pendingInertia:null
+};
+
+let ws=null,reconnectTimer=0,heartbeatTimer=0,connectionGeneration=0,lastTap={time:0,x:0,y:0};
+let inertia=null,modalOpen=false,modalKind='';
+let controlCenter=null;
+
+function transition(next){gesture.state=next}
+function setState(text,ok=false){state.textContent=text;state.style.color=ok?'var(--good)':'var(--warn)'}
+function setHint(text){hint.textContent=text;padHint.textContent=text}
+function clamp(value,min,max){return Math.max(min,Math.min(max,value))}
+function send(data){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))}
+function logClientEvent(event,reason=''){send({type:'client_event',event,reason})}
+
+function stopHeartbeat(){clearInterval(heartbeatTimer);heartbeatTimer=0}
+function startHeartbeat(){
+  stopHeartbeat();
+  heartbeatTimer=setInterval(()=>{if(ws&&ws.readyState===WebSocket.OPEN)send({type:'ping'})},25000);
+}
+function connect(){
+  clearTimeout(reconnectTimer);stopHeartbeat();setState('正在连接');
+  const generation=++connectionGeneration;
+  const scheme=location.protocol==='https:'?'wss':'ws';
+  const socket=new WebSocket(`${scheme}://${location.hostname}:51877/ws`);
+  ws=socket;
+  socket.onopen=()=>{if(generation!==connectionGeneration||ws!==socket)return;startHeartbeat();setState('已连接',true);setHint(modalOpen?(modalKind==='windows'?'窗口切换已打开':'文字输入已打开'):'触控板已就绪')};
+  socket.onclose=()=>{if(generation!==connectionGeneration||ws!==socket)return;stopHeartbeat();setState('连接断开');stopInertia();resetGesture('websocket-disconnected',{releaseButtons:false,log:false});reconnectTimer=setTimeout(connect,1000)};
+  socket.onerror=()=>{if(ws===socket&&socket.readyState!==WebSocket.CLOSED)socket.close()};
+}
+function ensureConnected(){
+  if(!ws||ws.readyState===WebSocket.CLOSED){connect();return}
+  if(ws.readyState===WebSocket.OPEN)send({type:'ping'});
+}
+
+function renderDots(){
+  let index=0;
+  for(const pointer of gesture.pointers.values()){
+    if(index>=dots.length)break;
+    dots[index].style.display='block';dots[index].style.left=pointer.x+'px';dots[index].style.top=pointer.y+'px';index++;
+  }
+  for(;index<dots.length;index++)dots[index].style.display='none';
+}
+
+function resetGesture(reason,{releaseButtons=false,log=true,preserveModal=true}={}){
+  clearTimeout(gesture.longTimer);gesture.longTimer=0;clearTimeout(gesture.dragArmTimer);gesture.dragArmTimer=0;if(gesture.two?.holdTimer)clearTimeout(gesture.two.holdTimer);
+  if(releaseButtons)send({type:'release'});
+  gesture.dragHeld=false;gesture.dragLocked=false;$('#drag').classList.remove('active');
+  gesture.pointers.clear();gesture.suppressed.clear();gesture.two=null;gesture.pendingInertia=null;
+  gesture.longTriggered=false;gesture.secondTap=false;gesture.dragArmed=false;gesture.dragKind='';gesture.moveDX=0;gesture.moveDY=0;
+  transition(preserveModal&&modalOpen?(modalKind==='windows'?GestureState.WindowSwitcherOpen:GestureState.TextInputOpen):GestureState.Idle);
+  renderDots();
+  if(log)logClientEvent('gesture_reset',reason);
+}
+
+function stopInertia(){
+  if(!inertia)return;
+  cancelAnimationFrame(inertia.raf);inertia=null;
+}
+
+function startInertia(two){
+  if(!$('#inertiaEnabled').checked||modalOpen||document.hidden||!ws||ws.readyState!==WebSocket.OPEN)return;
+  let vx=two.velocityX||0,vy=two.velocityY||0;
+  if(Math.hypot(vx,vy)<2.2)return;
+  const profile={low:{decay:.84,max:650},medium:{decay:.90,max:1050},high:{decay:.935,max:1450}}[$('#inertiaStrength').value]||{decay:.90,max:1050};
+  const started=performance.now();let last=started;
+  inertia={raf:0};
+  const frame=now=>{
+    if(!inertia||modalOpen||document.hidden||gesture.pointers.size||!ws||ws.readyState!==WebSocket.OPEN){stopInertia();return}
+    const dt=clamp(now-last,4,34);last=now;
+    const decay=Math.pow(profile.decay,dt/16.667);vx*=decay;vy*=decay;
+    const x=clamp(vx*dt/16.667,-240,240),y=clamp(vy*dt/16.667,-240,240);
+    if(Math.abs(x)>=.55||Math.abs(y)>=.55)send({type:'scroll',x:Math.round(x),y:Math.round(y)});
+    if(now-started>=profile.max||Math.hypot(vx,vy)<.7){stopInertia();return}
+    inertia.raf=requestAnimationFrame(frame);
+  };
+  inertia.raf=requestAnimationFrame(frame);
+}
+
+function queueMove(dx,dy){
+  gesture.moveDX+=dx;gesture.moveDY+=dy;
+  if(gesture.moveScheduled)return;
+  gesture.moveScheduled=true;
+  requestAnimationFrame(()=>{
+    gesture.moveScheduled=false;
+    const x=Math.round(gesture.moveDX),y=Math.round(gesture.moveDY);gesture.moveDX-=x;gesture.moveDY-=y;
+    if(x||y)send({type:'move',dx:clamp(x,-480,480),dy:clamp(y,-480,480)});
+  });
+}
+
+function point(event){const rect=pad.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top}}
+function pointerDistance(pointer){return Math.hypot(pointer.x-pointer.startX,pointer.y-pointer.startY)}
+
+function releaseDragLock(message='左键已释放'){
+  if(gesture.dragHeld||gesture.dragLocked)send({type:'button',button:'left',down:false});
+  gesture.dragHeld=false;gesture.dragLocked=false;$('#drag').classList.remove('active');
+  if(message)setHint(message);
+}
+
+function startLongPress(pointerId){
+  clearTimeout(gesture.longTimer);gesture.longTriggered=false;
+  gesture.longTimer=setTimeout(()=>{
+    const pointer=gesture.pointers.get(pointerId);
+    if(pointer&&gesture.pointers.size===1&&gesture.state===GestureState.TapCandidate&&!pointer.moved&&!gesture.secondTap&&!gesture.dragLocked){
+      gesture.longTriggered=true;transition(GestureState.LongPress);send({type:'click',button:'right'});setHint('已发送右键');
+    }
+  },620);
+}
+
+function armPressDrag(pointerId){
+  clearTimeout(gesture.dragArmTimer);gesture.dragArmTimer=0;gesture.dragArmed=false;gesture.dragKind='';
+  const kind=gesture.secondTap?'double':'press',delay=gesture.secondTap?150:220;
+  gesture.dragArmTimer=setTimeout(()=>{
+    const pointer=gesture.pointers.get(pointerId);
+    if(pointer&&gesture.pointers.size===1&&gesture.state===GestureState.TapCandidate&&pointer.maxMove<=7&&!gesture.dragLocked){
+      gesture.dragArmed=true;gesture.dragKind=kind;
+      setHint(kind==='double'?'继续按住并移动可拖动':'按住已识别，移动即可拖动');
+    }
+  },delay);
+}
+
+function cancelDragArm(){
+  clearTimeout(gesture.dragArmTimer);gesture.dragArmTimer=0;gesture.dragArmed=false;gesture.dragKind='';
+}
+
+function beginTwo(){
+  clearTimeout(gesture.longTimer);
+  cancelDragArm();
+  if(gesture.dragHeld||gesture.dragLocked)releaseDragLock('多指手势已释放拖动锁定');
+  const pointers=[...gesture.pointers.values()];
+  if(pointers.length!==2)return;
+  const now=performance.now(),centerX=(pointers[0].x+pointers[1].x)/2,centerY=(pointers[0].y+pointers[1].y)/2;
+  const two={start:now,lastTime:now,startX:centerX,startY:centerY,lastX:centerX,lastY:centerY,maxFingerMove:0,velocityX:0,velocityY:0,holdTimer:0};
+  two.holdTimer=setTimeout(()=>{
+    if(modalOpen||gesture.two!==two||gesture.state!==GestureState.TwoFingerPending||gesture.pointers.size!==2||two.maxFingerMove>22)return;
+    transition(GestureState.TwoFingerHold);logClientEvent('two_finger_hold');openTextPanel('two-finger-hold');
+  },520);
+  gesture.two=two;gesture.secondTap=false;transition(GestureState.TwoFingerPending);setHint('双指轻触右键 · 保持不动约 0.5 秒打开键盘');
+}
+
+function suppressCurrentGesture(reason){
+  clearTimeout(gesture.longTimer);stopInertia();
+  cancelDragArm();
+  if(gesture.dragHeld)releaseDragLock('拖动已取消');
+  if(gesture.two?.holdTimer)clearTimeout(gesture.two.holdTimer);gesture.two=null;gesture.pendingInertia=null;gesture.secondTap=false;transition(GestureState.Suppressed);
+  setHint(reason);
+}
+
+function onDown(event){
+  if(modalOpen){event.preventDefault();return}
+  const previousState=gesture.state;
+  event.preventDefault();stopInertia();pad.classList.add('interacted');pad.setPointerCapture?.(event.pointerId);
+  const current=point(event),now=performance.now();
+  const pointer={x:current.x,y:current.y,startX:current.x,startY:current.y,sentX:current.x,sentY:current.y,lastX:current.x,lastY:current.y,lastTime:now,start:now,moved:false,maxMove:0};
+  gesture.pointers.set(event.pointerId,pointer);
+  if(previousState===GestureState.Suppressed){gesture.pendingInertia=null;transition(GestureState.Suppressed);renderDots();return}
+
+  if(gesture.pointers.size===1){
+    if(gesture.dragLocked){transition(GestureState.DragLocked);gesture.secondTap=false}
+    else{
+      transition(GestureState.TapCandidate);
+      gesture.secondTap=now-lastTap.time<300&&Math.hypot(pointer.x-lastTap.x,pointer.y-lastTap.y)<36;
+      startLongPress(event.pointerId);armPressDrag(event.pointerId);
+    }
+  }else if(gesture.pointers.size===2){
+    if([GestureState.SingleMove,GestureState.DoubleTapDrag,GestureState.PressDrag,GestureState.LongPress].includes(gesture.state))suppressCurrentGesture('多指接入，当前手势已取消');
+    else beginTwo();
+  }else suppressCurrentGesture('三指及以上手势已忽略');
+  renderDots();
+}
+
+function moveSingle(pointer,dx,dy,dt){
+  const total=pointerDistance(pointer);
+  if(gesture.state===GestureState.TapCandidate){
+    if(gesture.dragArmed){
+      if(total<=12)return;
+      const dragKind=gesture.dragKind;
+      clearTimeout(gesture.longTimer);pointer.moved=true;cancelDragArm();lastTap.time=0;
+      send({type:'button',button:'left',down:true});gesture.dragHeld=true;
+      transition(dragKind==='double'?GestureState.DoubleTapDrag:GestureState.PressDrag);
+      setHint(dragKind==='double'?'双击按住拖动中':'按住拖动中');
+    }else if(total>7){
+      clearTimeout(gesture.longTimer);pointer.moved=true;cancelDragArm();gesture.secondTap=false;lastTap.time=0;transition(GestureState.SingleMove);
+    }
+  }else if(gesture.state===GestureState.DragLocked&&total>7){
+    clearTimeout(gesture.longTimer);pointer.moved=true;transition(GestureState.DragLocked);
+  }
+  if(![GestureState.SingleMove,GestureState.DoubleTapDrag,GestureState.PressDrag,GestureState.DragLocked].includes(gesture.state))return;
+  const moveX=pointer.x-pointer.sentX,moveY=pointer.y-pointer.sentY;pointer.sentX=pointer.x;pointer.sentY=pointer.y;
+  const base=+$('#sensitivity').value,speed=Math.hypot(dx,dy)*16/dt,boost=$('#acceleration').checked?1+clamp((speed-1.5)/9,0,1.35):1;
+  queueMove(moveX*base*boost,moveY*base*boost);
+}
+
+function moveTwo(now){
+  if(!gesture.two||gesture.pointers.size!==2)return;
+  const pointers=[...gesture.pointers.values()],centerX=(pointers[0].x+pointers[1].x)/2,centerY=(pointers[0].y+pointers[1].y)/2;
+  const dt=Math.max(4,now-gesture.two.lastTime),speed=+$('#scrollSpeed').value,direction=$('#natural').checked?-1:1;
+  const scrollX=(centerX-gesture.two.lastX)*speed*direction,scrollY=(centerY-gesture.two.lastY)*speed*direction;
+  gesture.two.lastX=centerX;gesture.two.lastY=centerY;gesture.two.lastTime=now;
+  gesture.two.maxFingerMove=Math.max(gesture.two.maxFingerMove,...pointers.map(pointerDistance));
+  if(gesture.state===GestureState.TwoFingerPending&&gesture.two.maxFingerMove<=18)return;
+  if(gesture.state===GestureState.TwoFingerPending){clearTimeout(gesture.two.holdTimer);gesture.two.holdTimer=0;transition(GestureState.TwoFingerScroll)}
+  if(Math.abs(scrollX)>1||Math.abs(scrollY)>1){
+    send({type:'scroll',x:Math.round(scrollX),y:Math.round(scrollY)});
+    const instantX=scrollX*16.667/dt,instantY=scrollY*16.667/dt;
+    gesture.two.velocityX=gesture.two.velocityX*.62+instantX*.38;gesture.two.velocityY=gesture.two.velocityY*.62+instantY*.38;
+  }
+}
+
+function onMove(event){
+  const pointer=gesture.pointers.get(event.pointerId);
+  if(!pointer||gesture.state===GestureState.Suppressed||modalOpen)return;
+  event.preventDefault();
+  const current=point(event),now=performance.now(),dx=current.x-pointer.lastX,dy=current.y-pointer.lastY,dt=Math.max(4,now-pointer.lastTime);
+  pointer.x=current.x;pointer.y=current.y;pointer.lastX=current.x;pointer.lastY=current.y;pointer.lastTime=now;
+  pointer.maxMove=Math.max(pointer.maxMove,pointerDistance(pointer));
+  if(pointer.maxMove>7){pointer.moved=true;clearTimeout(gesture.longTimer);if(!gesture.dragArmed)cancelDragArm()}
+  renderDots();
+
+  if([GestureState.TwoFingerPending,GestureState.TwoFingerScroll].includes(gesture.state))moveTwo(now);
+  else if(gesture.pointers.size===1)moveSingle(pointer,dx,dy,dt);
+}
+
+function finishTwo(event,cancel){
+  const two=gesture.two;if(!two)return false;clearTimeout(two.holdTimer);two.holdTimer=0;
+  const now=performance.now(),stateAtEnd=gesture.state;
+  if(!cancel&&stateAtEnd===GestureState.TwoFingerPending&&now-two.start<320&&two.maxFingerMove<12){send({type:'click',button:'right'});setHint('已发送右键')}
+  else if(!cancel&&stateAtEnd===GestureState.TwoFingerScroll)gesture.pendingInertia=two;
+
+  gesture.pointers.delete(event.pointerId);
+  for(const id of gesture.pointers.keys())gesture.suppressed.add(id);
+  gesture.two=null;transition(gesture.pointers.size?GestureState.Suppressed:GestureState.Idle);renderDots();
+  return true;
+}
+
+function finishSingle(event,cancel){
+  const pointer=gesture.pointers.get(event.pointerId),now=performance.now(),stateAtEnd=gesture.state;
+  if(!pointer)return;
+  clearTimeout(gesture.longTimer);cancelDragArm();
+  if([GestureState.DoubleTapDrag,GestureState.PressDrag].includes(stateAtEnd)&&gesture.dragHeld){send({type:'button',button:'left',down:false});gesture.dragHeld=false;setHint('拖动结束')}
+  else if(!cancel&&stateAtEnd===GestureState.TapCandidate&&!pointer.moved&&!gesture.longTriggered&&!gesture.dragLocked){
+    send({type:'click',button:'left'});
+    if(gesture.secondTap){lastTap.time=0;setHint('已双击')}
+    else{lastTap={time:now,x:pointer.x,y:pointer.y};setHint('已单击')}
+  }
+  gesture.pointers.delete(event.pointerId);gesture.secondTap=false;gesture.longTriggered=false;
+  transition(gesture.dragLocked?GestureState.DragLocked:GestureState.Idle);renderDots();
+}
+
+function endPointer(event,cancel=false){
+  if(!gesture.pointers.has(event.pointerId)){gesture.suppressed.delete(event.pointerId);return}
+  event.preventDefault();
+  if(gesture.state===GestureState.Suppressed){
+    gesture.pointers.delete(event.pointerId);gesture.suppressed.delete(event.pointerId);if(cancel)gesture.pendingInertia=null;
+    if(!gesture.pointers.size){transition(GestureState.Idle);if(gesture.pendingInertia){const pending=gesture.pendingInertia;gesture.pendingInertia=null;startInertia(pending)}}renderDots();return;
+  }
+  if([GestureState.TwoFingerPending,GestureState.TwoFingerScroll].includes(gesture.state)){finishTwo(event,cancel);return}
+  finishSingle(event,cancel);
+}
+
+
+pad.addEventListener('pointerdown',onDown);
+pad.addEventListener('pointermove',onMove);
+pad.addEventListener('pointerup',event=>endPointer(event));
+pad.addEventListener('pointercancel',event=>endPointer(event,true));
+pad.addEventListener('lostpointercapture',event=>{if(gesture.pointers.has(event.pointerId))endPointer(event,true)});
+pad.addEventListener('contextmenu',event=>event.preventDefault());
+
+document.querySelectorAll('[data-click]').forEach(button=>button.onclick=()=>{stopInertia();send({type:'click',button:button.dataset.click})});
+document.querySelectorAll('[data-pad-shortcut]').forEach(button=>button.onclick=async()=>{
+  stopInertia();const action=button.dataset.padShortcut;button.disabled=true;
+  try{
+    const url=action==='screenshot'?'/core-api/key/screenshot':'/api/hotkey/'+encodeURIComponent(action);
+    const response=await fetch(url,{method:'POST'});
+    if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||'操作失败')}
+    setHint(action==='screenshot'?'已发送截图快捷键':action==='copy'?'已复制':'已粘贴');
+  }catch(error){setHint((action==='screenshot'?'截图':action==='copy'?'复制':'粘贴')+'失败：'+(error?.message||'电脑端不可用'))}
+  finally{button.disabled=false}
+});
+$('#drag').onclick=()=>{
+  stopInertia();gesture.dragLocked=!gesture.dragLocked;send({type:'button',button:'left',down:gesture.dragLocked});
+  $('#drag').classList.toggle('active',gesture.dragLocked);transition(gesture.dragLocked?GestureState.DragLocked:GestureState.Idle);
+  setHint(gesture.dragLocked?'左键已锁定，可滑动拖动':'左键已释放');
+};
+$('#release').onclick=()=>{stopInertia();send({type:'release'});resetGesture('manual-release',{releaseButtons:false});setHint('所有鼠标按键已释放')};
+$('#settingsToggle').onclick=()=>{const open=$('#settingsPanel').classList.toggle('open');$('#settingsToggle').textContent=open?'收起':'设置'};
+
+function saveSettings(){
+  localStorage.setItem('touchpadSettingsRevision','3');
+  localStorage.setItem('touchpadSensitivity',$('#sensitivity').value);
+  localStorage.setItem('touchpadScrollSpeed',$('#scrollSpeed').value);
+  localStorage.setItem('touchpadNatural',$('#natural').checked?'1':'0');
+  localStorage.setItem('touchpadAcceleration',$('#acceleration').checked?'1':'0');
+  localStorage.setItem('touchpadInertiaEnabled',$('#inertiaEnabled').checked?'1':'0');
+  localStorage.setItem('touchpadInertiaStrength',$('#inertiaStrength').value);
+}
+function loadSettings(){
+  const revision=localStorage.getItem('touchpadSettingsRevision');
+  if(revision==='2'||revision==='3'){
+    const sensitivity=localStorage.getItem('touchpadSensitivity'),scroll=localStorage.getItem('touchpadScrollSpeed');
+    const natural=localStorage.getItem('touchpadNatural'),acceleration=localStorage.getItem('touchpadAcceleration');
+    const inertiaEnabled=localStorage.getItem('touchpadInertiaEnabled'),inertiaStrength=localStorage.getItem('touchpadInertiaStrength');
+    if(sensitivity)$('#sensitivity').value=sensitivity;if(scroll)$('#scrollSpeed').value=scroll;
+    if(natural!==null)$('#natural').checked=natural==='1';if(acceleration!==null)$('#acceleration').checked=acceleration==='1';
+    if(inertiaEnabled!==null)$('#inertiaEnabled').checked=inertiaEnabled==='1';if(['low','medium','high'].includes(inertiaStrength))$('#inertiaStrength').value=inertiaStrength;
+  }
+  saveSettings();
+}
+$('#sensitivity').oninput=event=>{$('#sensitivityValue').textContent=(+event.target.value).toFixed(2)+'×';saveSettings()};
+$('#scrollSpeed').oninput=event=>{$('#scrollValue').textContent=event.target.value+'×';saveSettings()};
+$('#natural').onchange=saveSettings;$('#acceleration').onchange=saveSettings;
+$('#inertiaEnabled').onchange=()=>{if(!$('#inertiaEnabled').checked)stopInertia();saveSettings()};$('#inertiaStrength').onchange=saveSettings;
+loadSettings();$('#sensitivityValue').textContent=(+$('#sensitivity').value).toFixed(2)+'×';$('#scrollValue').textContent=$('#scrollSpeed').value+'×';
+
+function syncVisualHeight(){
+  const height=window.visualViewport?.height||window.innerHeight;document.documentElement.style.setProperty('--visual-height',height+'px');
+}
+function openTextPanel(source='button'){
+  controlCenter?.openText(source);
+}
+controlCenter=PhoneInputEmbeddedInput.create({
+  onBeforeOpen:(kind,source)=>{
+    stopInertia();send({type:'release'});resetGesture(kind==='text'?'text-input-open':'window-switcher-open',{releaseButtons:false,log:true,preserveModal:false});
+    modalOpen=true;modalKind=kind;transition(kind==='windows'?GestureState.WindowSwitcherOpen:GestureState.TextInputOpen);
+    setHint(kind==='text'?'文字输入已打开，触控板手势已暂停':'窗口切换已打开，触控板手势已暂停');logClientEvent('panel_opened',kind+':'+source);
+  },
+  onClose:(kind,reason)=>{
+    modalOpen=false;modalKind='';transition(GestureState.Idle);setHint('已返回触控板');logClientEvent('panel_closed',kind+':'+reason);
+  }
+});
+$('#keyboardButton').onclick=()=>openTextPanel('keyboard-button');
+
+const safeRelease=(reason,log=true)=>{stopInertia();send({type:'release'});resetGesture(reason,{releaseButtons:false,log,preserveModal:true})};
+window.addEventListener('blur',()=>safeRelease('window-blur'));
+document.addEventListener('visibilitychange',()=>{if(document.hidden)safeRelease('visibility-hidden');else ensureConnected()});
+window.addEventListener('online',ensureConnected);
+window.addEventListener('pagehide',()=>{stopHeartbeat();safeRelease('pagehide',false)});
+window.addEventListener('beforeunload',()=>send({type:'release'}));
+window.visualViewport?.addEventListener('resize',syncVisualHeight);window.addEventListener('resize',syncVisualHeight);
+syncVisualHeight();connect();
+})();
+</script>
+</body>
+</html>
