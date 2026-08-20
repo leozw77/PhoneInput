@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -14,9 +15,12 @@ namespace PhoneInput;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private const int DefaultPort = 8765;
+    // Keep the service on a dedicated five-digit port so it is less likely to
+    // collide with another local development service.
+    private const int DefaultPort = 51876;
     private readonly NotifyIcon _icon;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly System.Windows.Forms.Timer _foregroundTimer;
     private readonly int _port;
     private readonly IReadOnlyList<string> _urls;
     private WebApplication? _server;
@@ -25,8 +29,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _port = ReadPort(args);
         _urls = GetLanAddresses(_port);
+        PhoneInputLog.Info("startup", $"port={_port}; lanUrls={string.Join(',', _urls)}");
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add("打开诊断日志", null, (_, _) => OpenLog());
         menu.Items.Add("手机输入：正在启动", null, (_, _) => ShowAddress())!.Name = "status";
         menu.Items.Add("显示连接二维码", null, (_, _) => ShowQrCode());
         menu.Items.Add("显示访问地址", null, (_, _) => ShowAddress());
@@ -49,6 +55,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true
         };
         _icon.DoubleClick += (_, _) => ShowAddress();
+
+        // Sample the desktop from the interactive WinForms thread. The web
+        // server runs on thread-pool threads and must not be the source of
+        // truth for foreground-window state.
+        ForegroundWindow.Refresh();
+        _foregroundTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _foregroundTimer.Tick += (_, _) => ForegroundWindow.Refresh();
+        _foregroundTimer.Start();
 
         _ = StartServerAsync();
     }
@@ -78,7 +92,44 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 var target = ForegroundWindow.GetDescription();
                 var targetId = ForegroundWindow.GetId();
-                return Results.Ok(new { connected = true, target, targetId });
+                var targetType = ForegroundWindow.GetTargetKind();
+                return Results.Ok(new { connected = true, target, targetId, targetType });
+            });
+            app.MapGet("/api/input-state", (string? targetId, string? source, bool? copyBack) =>
+            {
+                var expectedTargetId = targetId?.Trim() ?? string.Empty;
+                if (expectedTargetId.Length == 0)
+                    return Results.BadRequest(new { error = "targetId is required", reason = "target-id-required" });
+
+                var requestSource = string.Equals(source, "manual", StringComparison.OrdinalIgnoreCase)
+                    ? "manual"
+                    : "automatic";
+                var allowClipboardFallback = requestSource == "manual" && copyBack == true;
+                PhoneInputLog.Info(
+                    "sync-read",
+                    $"phase=start; requestSource={requestSource}; targetId={expectedTargetId}; copyBack={allowClipboardFallback}");
+
+                var state = DesktopInputStateReader.ReadCurrent(
+                    expectedTargetId,
+                    allowGoogleSearchComboBox: requestSource == "manual",
+                    allowClipboardFallback);
+                var textLength = state.Supported ? state.Text.Length : 0;
+                PhoneInputLog.Info(
+                    "sync-read",
+                    $"phase=end; result={(state.Supported ? "success" : "failed")}; requestSource={requestSource}; targetId={expectedTargetId}; actualTargetId={state.TargetId}; control={state.ControlId}; reason={state.Reason}; source={state.Source}; textLength={textLength}");
+
+                if (state.Reason == "target-mismatch")
+                    return Results.Conflict(state);
+                return Results.Ok(state);
+            });
+            app.MapPost("/api/window-switch/{target}", async (string target, CancellationToken cancellationToken) =>
+            {
+                var result = await ForegroundWindow.TryActivateAsync(target, cancellationToken);
+                if (result.Success)
+                    return Results.Ok(result);
+                if (!result.Found)
+                    return Results.NotFound(new { error = $"{target} 未启动或没有可切换的窗口" });
+                return Results.Conflict(new { error = $"{target} 窗口切换失败，请稍后重试" });
             });
             app.MapPost("/api/text", async (TextRequest request, CancellationToken cancellationToken) =>
             {
@@ -87,16 +138,38 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 if (request.Text.Length > 20_000)
                     return Results.BadRequest(new { error = "一次最多发送 20000 个字符" });
 
-                await input.SendTextAsync(request.Text, Math.Clamp(request.DelayMs ?? 3, 0, 50), cancellationToken);
+                if (!IsCurrentTarget(request.TargetId))
+                    return Results.Conflict(new { error = "target changed" });
+                Func<bool>? targetValidator = request.TargetId is null ? null : () => IsCurrentTarget(request.TargetId);
+                try
+                {
+                    await input.SendTextAsync(request.Text, Math.Clamp(request.DelayMs ?? 3, 0, 50), cancellationToken, targetValidator);
+                }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 if (request.EnterAfter == true)
-                    await input.SendKeyAsync("enter", cancellationToken);
+                {
+                    try { await input.SendKeyAsync("enter", cancellationToken, targetValidator); }
+                    catch (InputTargetChangedException)
+                    {
+                        return Results.Conflict(new { error = "target changed" });
+                    }
+                }
                 return Results.Ok(new { sent = request.Text.Length });
             });
-            app.MapPost("/api/key/{key}", async (string key, CancellationToken cancellationToken) =>
+            app.MapPost("/api/key/{key}", async (string key, string? targetId, CancellationToken cancellationToken) =>
             {
                 if (!InputSender.IsSupportedKey(key))
                     return Results.BadRequest(new { error = "不支持这个按键" });
-                await input.SendKeyAsync(key, cancellationToken);
+                if (!IsCurrentTarget(targetId))
+                    return Results.Conflict(new { error = "target changed" });
+                try { await input.SendKeyAsync(key, cancellationToken, () => IsCurrentTarget(targetId)); }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 return Results.Ok();
             });
             app.MapPost("/api/selection", async (SelectionRequest request, CancellationToken cancellationToken) =>
@@ -107,7 +180,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 if (request.Start < 0 || request.End < request.Start || request.End > 20_000)
                     return Results.BadRequest(new { error = "光标位置无效" });
 
-                await input.SetSelectionAsync(request.Start, request.End, cancellationToken);
+                try { await input.SetSelectionAsync(request.Start, request.End, cancellationToken, () => IsCurrentTarget(request.TargetId)); }
+                catch (InputTargetChangedException)
+                {
+                    return Results.Conflict(new { error = "target changed" });
+                }
                 return Results.Ok();
             });
 
@@ -118,13 +195,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(AppContext.BaseDirectory, "PhoneInput.log"),
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\r\n");
-            }
-            catch { }
+            PhoneInputLog.Error("startup", ex);
             SetStatus("手机输入：启动失败");
             _icon.ShowBalloonTip(5000, "手机输入启动失败", ex.Message, ToolTipIcon.Error);
         }
@@ -138,6 +209,29 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
         if (_icon.ContextMenuStrip?.Items["status"] is ToolStripItem item) item.Text = text;
+    }
+
+    private void OpenLog()
+    {
+        PhoneInputLog.Info("diagnostics", "open-log");
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "notepad.exe",
+                Arguments = $"\"{PhoneInputLog.LogPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            PhoneInputLog.Error("diagnostics", ex);
+            MessageBox.Show(
+                $"日志路径：\n{PhoneInputLog.LogPath}\n\n{ex.Message}",
+                "无法打开诊断日志",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
     }
 
     private void ShowAddress()
@@ -191,6 +285,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private async Task ExitAsync()
     {
         _icon.Visible = false;
+        _foregroundTimer.Stop();
+        _foregroundTimer.Dispose();
         _shutdown.Cancel();
         if (_server is not null)
         {
@@ -206,6 +302,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _shutdown.Cancel();
+            _foregroundTimer.Stop();
+            _foregroundTimer.Dispose();
             _shutdown.Dispose();
             _icon.Dispose();
         }
@@ -250,6 +348,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
                b[0] == 172 && b[1] is >= 16 and <= 31;
     }
 
-    private sealed record TextRequest(string Text, int? DelayMs, bool? EnterAfter);
+    private static bool IsCurrentTarget(string? targetId) =>
+        targetId is null || string.Equals(targetId, ForegroundWindow.GetId(), StringComparison.OrdinalIgnoreCase);
+
+    private sealed record TextRequest(string Text, int? DelayMs, bool? EnterAfter, string? TargetId);
     private sealed record SelectionRequest(int Start, int End, string TargetId);
 }

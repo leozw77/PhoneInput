@@ -11,3 +11,10 @@ package/
 *.zip
 .DS_Store
 Thumbs.db
+
+# Native Android build outputs and locally running expanded release packages.
+native/android-native/.gradle/
+native/android-native/app/build/
+__pycache__/
+*.pyc
+Release/v1.4.0-native/PhoneInputEnhanced_1.4.0_Windows-x64_2026-08-09/

@@ -4,6 +4,28 @@
 
 [中文](#中文介绍) · [English](#english)
 
+## 当前最新版：Native 1.4.0
+
+当前主线是 **Windows Native Host + Android 原生客户端**，版本为 `1.4.0`（2026-08-09）。
+旧的 C#/.NET 浏览器客户端仍保留在 `src/`，作为历史兼容和回滚线，不再代表最新版。
+
+发布内容位于 [`Release/v1.4.0-native`](Release/v1.4.0-native)：
+
+- Windows x64 Native 包：触控板、鼠标手势、键盘/文字输入、窗口切换、截图、文件传输、图片中转栏、诊断和旧浏览器兼容入口。
+- Android Kotlin 原生客户端：单指移动/点击/拖动、双指右键/滚动、原生文字输入、批量与即时输入、输入法语音中转、图片/文件分享。
+- Android Debug APK 和未签名 Release APK；正式发布前仍需使用正式 keystore 签名。
+- Native Protocol v2，保留旧协议兼容。
+
+### 当前未完成与已知限制
+
+- **回读功能仍然很不完善**：只能在部分目标控件和应用中 best effort 工作；Chrome/浏览器页面、CRX 深度回读和复杂富文本回读仍未完成，不能按“完整回读”宣传。
+- Android 真机安装升级、锁屏/切后台/断网恢复，以及百度、搜狗、Gboard 等输入法兼容性仍需继续实机验证。
+- 图片中转栏在不同 DPI/多显示器上的显示，以及拖入实际 ChatGPT/Chrome 页面尚未完成完整验收。
+- Windows Downloads 被重定向或由 OneDrive 接管时，Known Folder 兼容性仍待修复。
+- Release APK 当前是未签名包；Native 版本的部分 Windows 输入/热键集成测试在受限环境中失败，不能写成“全部测试通过”。
+
+详细功能清单、验证边界和后续优先级见 [`docs/PHONEINPUT_V1.4.0_RELEASE_NOTES.md`](docs/PHONEINPUT_V1.4.0_RELEASE_NOTES.md)。
+
 ## 中文介绍
 
 使用手机输入法，直接向 Windows 当前获得焦点的输入框输入文字。无需安装手机 App，
@@ -67,10 +89,23 @@ Android Chrome 经过了最充分的测试。iPhone Safari 可以完成基本输
 dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
-  --self-contained true --no-restore -o .\dist
+  --self-contained false --no-restore -o .\dist
 ```
 
-自包含版本包含 .NET 运行时，因此文件体积较大。
+发布包必须使用 framework-dependent 模式；目标电脑已安装 .NET 8 Desktop Runtime，禁止使用 `--self-contained true`，禁止把 .NET 运行时打进 ZIP。
+底层规则：项目文件必须保持 `SelfContained=false`，发布命令必须使用 `--self-contained false`；任何包含 .NET 运行时的自包含包都不得作为发布包。
+
+### 编译与发布硬性验收
+
+每次更新、重新编译或打包后，必须证明程序能够实际使用；编译成功不等于完成。
+
+- 启动本次生成的确切 `PhoneInputEnhanced.exe`，确认托盘程序正常运行并监听当前 LAN 地址和端口。
+- 使用同一 Wi-Fi 下的 Android 手机实际打开 `http://<电脑局域网 IP>:51876/`，确认页面能加载、`/api/status` 可访问，并完成一次真实输入回归。
+- 检查与本次 exe 完整路径匹配的 Windows 防火墙入站规则：必须启用并允许 **Private** 网络；不能只检查回环地址或其他历史版本路径。
+- 发布 ZIP 中的 exe、版本号、端口、二维码地址和说明必须与本次构建一致；不得把仅在源码 `bin` 目录验证过的文件直接当作发布包。
+- 稳定版目录和 tag 必须保持可回滚；preview 验证失败时不得覆盖稳定版。
+
+只有以上真实运行、手机局域网访问和输入回归都通过，才可以称为本次更新可用。
 
 ### 隐私
 
@@ -101,6 +136,7 @@ entirely on the local Wi-Fi network and does not use a cloud service.
 - Windows 10 or Windows 11, x64
 - Android or iPhone on the same Wi-Fi as the PC
 - A modern mobile browser
+- The release ZIP requires the .NET 8 Desktop Runtime
 
 Android Chrome is the most thoroughly tested browser. Safari on iPhone should
 support the basic workflow, but input-method and selection details can differ.
@@ -150,11 +186,37 @@ Install the .NET 8 SDK, then run:
 dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 `
-  --self-contained true --no-restore -o .\dist
+  --self-contained false --no-restore -o .\dist
 ```
 
-The self-contained executable is intentionally large because it includes the
-.NET runtime.
+The release package is framework-dependent and requires the .NET 8 Desktop
+Runtime already installed on Windows. The default local-network service port
+is `51876`.
+
+### Mandatory build and release acceptance
+
+Every update, rebuild, or package operation must prove that the resulting
+program is usable in practice; a successful compilation alone is not completion.
+
+- Launch the exact `PhoneInputEnhanced.exe` produced by the current build and
+  confirm that the tray app runs and listens on the current LAN address and port.
+- From an Android phone on the same Wi-Fi, open
+  `http://<PC-LAN-IP>:51876/`, verify that the page and `/api/status` load, and
+  complete one real input regression.
+- Check the Windows inbound firewall rule for the exact executable path: it must
+  be enabled and allow the **Private** profile. Do not rely only on loopback
+  access or rules for historical versions.
+- The executable, version, port, QR address, and documentation in the release
+  ZIP must match the current build. A file tested only from `src\bin` must not be
+  treated as the release package.
+- When the target computer already has the .NET 8 Desktop Runtime, keep
+  `SelfContained=false` and use `--self-contained false`. Never generate or ship
+  a self-contained ZIP with the .NET runtime bundled inside.
+- Keep stable release directories and tags rollback-safe; never overwrite a
+  stable release when preview validation fails.
+
+Only after real runtime, phone LAN access, and input regression all pass may the
+update be described as usable.
 
 ### Privacy
 
