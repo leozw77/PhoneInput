@@ -20,31 +20,105 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Restore
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK 36
+        shell: pwsh
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Restore Windows Core
         run: dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 
-      - name: Build
+      - name: Build Windows Core
         run: dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 
-      - name: Publish
-        run: dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 --self-contained true --no-restore -o .\dist
+      - name: Publish Windows Core framework-dependent
+        run: dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 --self-contained false --no-restore -o .\core-dist
 
-      - name: Package
+      - name: Build Android preview APK
+        shell: pwsh
+        run: .\native\android-native\gradlew.bat -p .\native\android-native assembleDebug --no-daemon
+
+      - name: Package preview with stable 1.4.0 Windows shell
         shell: pwsh
         run: |
-          Copy-Item .\README.md .\dist\README.md
-          Copy-Item .\LICENSE .\dist\LICENSE
-          Copy-Item .\THIRD-PARTY-NOTICES.md .\dist\THIRD-PARTY-NOTICES.md
-          Compress-Archive -Path .\dist\* -DestinationPath .\PhoneInputEnhanced-Windows-x64.zip
-          (Get-FileHash .\PhoneInputEnhanced-Windows-x64.zip -Algorithm SHA256).Hash.ToLower() |
-            Set-Content .\PhoneInputEnhanced-Windows-x64.zip.sha256
+          $name = "PhoneInput-1.4.1-preview.1-readback-stability-buildfix3"
+          $stableZip = ".\Release\v1.4.0-native\PhoneInputEnhanced_1.4.0_Windows-x64_2026-08-09.zip"
+          $extractRoot = ".\stable-extract"
+          if (-not (Test-Path $stableZip)) { throw "Stable 1.4.0 Windows package is missing: $stableZip" }
+
+          Expand-Archive -LiteralPath $stableZip -DestinationPath $extractRoot -Force
+          $hostFile = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "PhoneInputTouchpadHost.exe" | Select-Object -First 1
+          if (-not $hostFile) {
+            Get-ChildItem -LiteralPath $extractRoot -Recurse | Select-Object -ExpandProperty FullName
+            throw "Stable package does not contain PhoneInputTouchpadHost.exe"
+          }
+          $packageRoot = $hostFile.Directory.FullName
+          Write-Host "Stable package root: $packageRoot"
+
+          $required = @(
+            (Join-Path $packageRoot "PhoneInputEnhanced.exe"),
+            (Join-Path $packageRoot "PhoneInputTouchpadHost.exe"),
+            (Join-Path $packageRoot "PhoneInputSendTo.exe"),
+            (Join-Path $packageRoot "PhoneInputImageTray.exe"),
+            (Join-Path $packageRoot "Core")
+          )
+          foreach ($item in $required) {
+            if (-not (Test-Path -LiteralPath $item)) {
+              Get-ChildItem -LiteralPath $packageRoot -Recurse | Select-Object -ExpandProperty FullName
+              throw "Stable package component missing: $item"
+            }
+          }
+
+          $coreRoot = Join-Path $packageRoot "Core"
+          Remove-Item (Join-Path $coreRoot "*") -Recurse -Force
+          Copy-Item ".\core-dist\*" $coreRoot -Recurse -Force
+
+          $finalRequired = @(
+            (Join-Path $packageRoot "PhoneInputEnhanced.exe"),
+            (Join-Path $packageRoot "PhoneInputTouchpadHost.exe"),
+            (Join-Path $packageRoot "PhoneInputSendTo.exe"),
+            (Join-Path $packageRoot "PhoneInputImageTray.exe"),
+            (Join-Path $packageRoot "Core\PhoneInputEnhanced.exe")
+          )
+          foreach ($item in $finalRequired) {
+            if (-not (Test-Path -LiteralPath $item)) { throw "Final package component missing: $item" }
+          }
+
+          Compress-Archive -Path "$packageRoot\*" -DestinationPath ".\$name-Windows-x64.zip" -Force
+          Copy-Item ".\native\android-native\app\build\outputs\apk\debug\app-debug.apk" ".\$name.apk"
+          git archive --format=zip --output="$name-source.zip" HEAD
+          Copy-Item ".\docs\READBACK_STABILITY_STEP1_20260821.md" ".\$name-TEST_NOTES.md"
+
+          $files = @(
+            "$name-Windows-x64.zip",
+            "$name.apk",
+            "$name-source.zip",
+            "$name-TEST_NOTES.md"
+          )
+          $sums = foreach ($file in $files) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $file"
+          }
+          $sums | Set-Content ".\$name-SHA256SUMS.txt" -Encoding ASCII
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneInputEnhanced-Windows-x64
+          name: PhoneInput-1.4.1-preview.1-readback-stability-buildfix3
+          if-no-files-found: error
           path: |
-            PhoneInputEnhanced-Windows-x64.zip
-            PhoneInputEnhanced-Windows-x64.zip.sha256
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-SHA256SUMS.txt
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -52,5 +126,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            PhoneInputEnhanced-Windows-x64.zip
-            PhoneInputEnhanced-Windows-x64.zip.sha256
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix3-SHA256SUMS.txt
