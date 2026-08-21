@@ -65,6 +65,7 @@ internal static class DesktopInputStateReader
                     allowGoogleSearchComboBox && isGoogleSearchComboBox,
                     out var unsupportedReason))
             {
+                LogElementDiagnostics(element, handle, targetId, processName, controlId, unsupportedReason);
                 PhoneInputLog.Warn(
                     "input-read",
                     $"result=unsupported; reason={unsupportedReason}; target={targetId}; control={controlId}");
@@ -118,12 +119,11 @@ internal static class DesktopInputStateReader
                 }
                 else
                 {
-                    return Unsupported(
-                        targetId,
-                        controlId,
-                        isGoogleSearchComboBox
-                            ? "google-search-pattern-unavailable"
-                            : "no-readable-pattern");
+                    var reason = isGoogleSearchComboBox
+                        ? "google-search-pattern-unavailable"
+                        : "no-readable-pattern";
+                    LogElementDiagnostics(element, handle, targetId, processName, controlId, reason);
+                    return Unsupported(targetId, controlId, reason);
                 }
             }
 
@@ -184,6 +184,58 @@ internal static class DesktopInputStateReader
             PhoneInputLog.Warn("input-read", $"focused-edit-search=failed; reason={exception.GetType().Name}");
             return null;
         }
+    }
+
+    private static void LogElementDiagnostics(
+        AutomationElement element,
+        IntPtr handle,
+        string targetId,
+        string processName,
+        string controlId,
+        string reason)
+    {
+        try
+        {
+            string runtimeId;
+            try
+            {
+                runtimeId = string.Join(".", element.GetRuntimeId());
+            }
+            catch
+            {
+                runtimeId = "unavailable";
+            }
+
+            string supportedPatterns;
+            try
+            {
+                supportedPatterns = string.Join(",", element.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName));
+            }
+            catch
+            {
+                supportedPatterns = "unavailable";
+            }
+
+            PhoneInputLog.Warn(
+                "input-read-diagnostic",
+                $"reason={reason}; process={processName}; window=0x{handle.ToInt64():X}; target={targetId}; control={controlId}; " +
+                $"controlType={DiagnosticValue(element.Current.ControlType?.ProgrammaticName)}; " +
+                $"name={DiagnosticValue(element.Current.Name)}; automationId={DiagnosticValue(element.Current.AutomationId)}; " +
+                $"className={DiagnosticValue(element.Current.ClassName)}; frameworkId={DiagnosticValue(element.Current.FrameworkId)}; " +
+                $"runtimeId={runtimeId}; patterns={supportedPatterns}");
+        }
+        catch (Exception exception) when (exception is ElementNotAvailableException or COMException or InvalidOperationException)
+        {
+            PhoneInputLog.Warn("input-read-diagnostic", $"reason={reason}; diagnostic=failed; exception={exception.GetType().Name}");
+        }
+    }
+
+    private static string DiagnosticValue(string? value)
+    {
+        var normalized = (value ?? string.Empty)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+        return normalized.Length <= 180 ? normalized : normalized[..180] + "…";
     }
 
     private static int GetOffset(TextPatternRange document, TextPatternRange selection, bool end = false)

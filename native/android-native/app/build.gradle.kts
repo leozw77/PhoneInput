@@ -11,8 +11,8 @@ android {
         applicationId = "com.phoneinputenhanced.nativeclient"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.4.0"
+        versionCode = 14
+        versionName = "1.4.1-preview.1-readback-stability"
     }
 
     buildFeatures {

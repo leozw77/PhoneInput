@@ -54,6 +54,7 @@ class NativeInputDialog(
     private var realtimeActions: View? = null
 
     private var suppressTextCallbacks = false
+    private var remoteUpdateDepth = 0
     private var composing = false
     private var suppressSelectionUntil = 0L
     private var selectionRunnable: Runnable? = null
@@ -99,6 +100,7 @@ class NativeInputDialog(
             busy = false
             imeWasVisible = false
             readbackInFlight = false
+            remoteUpdateDepth = 0
             dialog = null
             edit = null
             targetView = null
@@ -248,7 +250,7 @@ class NativeInputDialog(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
 
             override fun afterTextChanged(value: Editable?) {
-                if (!isActive(token) || suppressTextCallbacks || !realtime) return
+                if (!isActive(token) || suppressTextCallbacks || remoteUpdateDepth > 0 || !realtime) return
                 val editable = value ?: return
                 val hasComposition = BaseInputConnection.getComposingSpanStart(editable) >= 0 ||
                     BaseInputConnection.getComposingSpanEnd(editable) >= 0
@@ -263,7 +265,7 @@ class NativeInputDialog(
             }
         })
         input.onSelectionChangedListener = selection@ { start, end ->
-            if (!isActive(token) || !realtime || suppressTextCallbacks || composing) return@selection
+            if (!isActive(token) || !realtime || suppressTextCallbacks || remoteUpdateDepth > 0 || composing) return@selection
             if (SystemClock.uptimeMillis() < suppressSelectionUntil) return@selection
             scheduleSelectionSync(start, end, token)
         }
@@ -401,7 +403,7 @@ class NativeInputDialog(
             val end = state.selectionEnd.coerceIn(start, state.text.length)
             projectedSelectionStart = start
             projectedSelectionEnd = end
-            setEditProgrammatically(state.text, start, end)
+            applyDesktopStateProgrammatically(state.text, start, end)
             setStatus(if (manual) "已从电脑同步。" else "已回读电脑当前输入内容。", false)
             edit?.let(::focusAndShowIme)
         }
@@ -589,6 +591,15 @@ class NativeInputDialog(
             setEditProgrammatically("", 0, 0)
             Toast.makeText(activity, if (enterAfter) "已发送并回车" else "文字已发送", Toast.LENGTH_SHORT).show()
             if (d.isShowing) d.dismiss()
+        }
+    }
+
+    private fun applyDesktopStateProgrammatically(value: String, start: Int, end: Int) {
+        remoteUpdateDepth++
+        try {
+            setEditProgrammatically(value, start, end)
+        } finally {
+            remoteUpdateDepth = (remoteUpdateDepth - 1).coerceAtLeast(0)
         }
     }
 
