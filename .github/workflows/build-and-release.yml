@@ -49,25 +49,48 @@ jobs:
       - name: Package preview with stable 1.4.0 Windows shell
         shell: pwsh
         run: |
-          $name = "PhoneInput-1.4.1-preview.1-readback-stability-buildfix1"
+          $name = "PhoneInput-1.4.1-preview.1-readback-stability-buildfix2"
           $stableZip = ".\Release\v1.4.0-native\PhoneInputEnhanced_1.4.0_Windows-x64_2026-08-09.zip"
-          $packageRoot = ".\package-root"
+          $extractRoot = ".\stable-extract"
           if (-not (Test-Path $stableZip)) { throw "Stable 1.4.0 Windows package is missing: $stableZip" }
 
-          Expand-Archive -LiteralPath $stableZip -DestinationPath $packageRoot -Force
+          Expand-Archive -LiteralPath $stableZip -DestinationPath $extractRoot -Force
+          $host = Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter "PhoneInputTouchpadHost.exe" | Select-Object -First 1
+          if (-not $host) {
+            Get-ChildItem -LiteralPath $extractRoot -Recurse | Select-Object -ExpandProperty FullName
+            throw "Stable package does not contain PhoneInputTouchpadHost.exe"
+          }
+          $packageRoot = $host.Directory.FullName
+          Write-Host "Stable package root: $packageRoot"
+
           $required = @(
-            "$packageRoot\PhoneInputEnhanced.exe",
-            "$packageRoot\PhoneInputTouchpadHost.exe",
-            "$packageRoot\PhoneInputSendTo.exe",
-            "$packageRoot\PhoneInputImageTray.exe",
-            "$packageRoot\Core"
+            (Join-Path $packageRoot "PhoneInputEnhanced.exe"),
+            (Join-Path $packageRoot "PhoneInputTouchpadHost.exe"),
+            (Join-Path $packageRoot "PhoneInputSendTo.exe"),
+            (Join-Path $packageRoot "PhoneInputImageTray.exe"),
+            (Join-Path $packageRoot "Core")
           )
           foreach ($item in $required) {
-            if (-not (Test-Path $item)) { throw "Stable package component missing: $item" }
+            if (-not (Test-Path -LiteralPath $item)) {
+              Get-ChildItem -LiteralPath $packageRoot -Recurse | Select-Object -ExpandProperty FullName
+              throw "Stable package component missing: $item"
+            }
           }
 
-          Remove-Item "$packageRoot\Core\*" -Recurse -Force
-          Copy-Item ".\core-dist\*" "$packageRoot\Core\" -Recurse -Force
+          $coreRoot = Join-Path $packageRoot "Core"
+          Remove-Item (Join-Path $coreRoot "*") -Recurse -Force
+          Copy-Item ".\core-dist\*" $coreRoot -Recurse -Force
+
+          $finalRequired = @(
+            (Join-Path $packageRoot "PhoneInputEnhanced.exe"),
+            (Join-Path $packageRoot "PhoneInputTouchpadHost.exe"),
+            (Join-Path $packageRoot "PhoneInputSendTo.exe"),
+            (Join-Path $packageRoot "PhoneInputImageTray.exe"),
+            (Join-Path $packageRoot "Core\PhoneInputEnhanced.exe")
+          )
+          foreach ($item in $finalRequired) {
+            if (-not (Test-Path -LiteralPath $item)) { throw "Final package component missing: $item" }
+          }
 
           Compress-Archive -Path "$packageRoot\*" -DestinationPath ".\$name-Windows-x64.zip" -Force
           Copy-Item ".\native\android-native\app\build\outputs\apk\debug\app-debug.apk" ".\$name.apk"
@@ -88,14 +111,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneInput-1.4.1-preview.1-readback-stability-buildfix1
+          name: PhoneInput-1.4.1-preview.1-readback-stability-buildfix2
           if-no-files-found: error
           path: |
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-Windows-x64.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1.apk
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-source.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-TEST_NOTES.md
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-SHA256SUMS.txt
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-SHA256SUMS.txt
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -103,8 +126,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-Windows-x64.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1.apk
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-source.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-TEST_NOTES.md
-            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-SHA256SUMS.txt
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix2-SHA256SUMS.txt
