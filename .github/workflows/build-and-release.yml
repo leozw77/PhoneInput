@@ -33,27 +33,43 @@ jobs:
         shell: pwsh
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Restore Windows
+      - name: Restore Windows Core
         run: dotnet restore .\src\PhoneInput\PhoneInput.csproj --configfile .\NuGet.Config
 
-      - name: Build Windows
+      - name: Build Windows Core
         run: dotnet build .\src\PhoneInput\PhoneInput.csproj -c Release --no-restore
 
-      - name: Publish Windows
-        run: dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 --self-contained true --no-restore -o .\dist
+      - name: Publish Windows Core framework-dependent
+        run: dotnet publish .\src\PhoneInput\PhoneInput.csproj -c Release -r win-x64 --self-contained false --no-restore -o .\core-dist
 
       - name: Build Android preview APK
         shell: pwsh
         run: .\native\android-native\gradlew.bat -p .\native\android-native assembleDebug --no-daemon
 
-      - name: Package preview deliverables
+      - name: Package preview with stable 1.4.0 Windows shell
         shell: pwsh
         run: |
-          $name = "PhoneInput-1.4.1-preview.1-readback-stability"
-          Copy-Item .\README.md .\dist\README.md
-          Copy-Item .\LICENSE .\dist\LICENSE
-          Copy-Item .\THIRD-PARTY-NOTICES.md .\dist\THIRD-PARTY-NOTICES.md
-          Compress-Archive -Path .\dist\* -DestinationPath ".\$name-Windows-x64.zip" -Force
+          $name = "PhoneInput-1.4.1-preview.1-readback-stability-buildfix1"
+          $stableZip = ".\Release\v1.4.0-native\PhoneInputEnhanced_1.4.0_Windows-x64_2026-08-09.zip"
+          $packageRoot = ".\package-root"
+          if (-not (Test-Path $stableZip)) { throw "Stable 1.4.0 Windows package is missing: $stableZip" }
+
+          Expand-Archive -LiteralPath $stableZip -DestinationPath $packageRoot -Force
+          $required = @(
+            "$packageRoot\PhoneInputEnhanced.exe",
+            "$packageRoot\PhoneInputTouchpadHost.exe",
+            "$packageRoot\PhoneInputSendTo.exe",
+            "$packageRoot\PhoneInputImageTray.exe",
+            "$packageRoot\Core"
+          )
+          foreach ($item in $required) {
+            if (-not (Test-Path $item)) { throw "Stable package component missing: $item" }
+          }
+
+          Remove-Item "$packageRoot\Core\*" -Recurse -Force
+          Copy-Item ".\core-dist\*" "$packageRoot\Core\" -Recurse -Force
+
+          Compress-Archive -Path "$packageRoot\*" -DestinationPath ".\$name-Windows-x64.zip" -Force
           Copy-Item ".\native\android-native\app\build\outputs\apk\debug\app-debug.apk" ".\$name.apk"
           git archive --format=zip --output="$name-source.zip" HEAD
           Copy-Item ".\docs\READBACK_STABILITY_STEP1_20260821.md" ".\$name-TEST_NOTES.md"
@@ -72,13 +88,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneInput-1.4.1-preview.1-readback-stability
+          name: PhoneInput-1.4.1-preview.1-readback-stability-buildfix1
+          if-no-files-found: error
           path: |
-            PhoneInput-1.4.1-preview.1-readback-stability-Windows-x64.zip
-            PhoneInput-1.4.1-preview.1-readback-stability.apk
-            PhoneInput-1.4.1-preview.1-readback-stability-source.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-TEST_NOTES.md
-            PhoneInput-1.4.1-preview.1-readback-stability-SHA256SUMS.txt
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-SHA256SUMS.txt
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -86,8 +103,8 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            PhoneInput-1.4.1-preview.1-readback-stability-Windows-x64.zip
-            PhoneInput-1.4.1-preview.1-readback-stability.apk
-            PhoneInput-1.4.1-preview.1-readback-stability-source.zip
-            PhoneInput-1.4.1-preview.1-readback-stability-TEST_NOTES.md
-            PhoneInput-1.4.1-preview.1-readback-stability-SHA256SUMS.txt
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-Windows-x64.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1.apk
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-source.zip
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-TEST_NOTES.md
+            PhoneInput-1.4.1-preview.1-readback-stability-buildfix1-SHA256SUMS.txt
