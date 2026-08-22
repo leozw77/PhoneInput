@@ -9,48 +9,41 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect public AC792 LVGL objects
+      - name: Inspect public AC792 LVGL LLVM objects
         shell: bash
         run: |
           set -euxo pipefail
-          BASE='https://raw.githubusercontent.com/1998jiangjun-sys/wificamera/d73c6826d8d4033c8696b4c22ee3c74bb2ea562a/wifi_camera/board/wl83/objs/apps/common/lvgl_v8/src/core'
-          curl -L --fail "$BASE/lv_event.c.o" -o lv_event.o
-          curl -L --fail "$BASE/lv_indev.c.o" -o lv_indev.o
-          file lv_event.o lv_indev.o
-          readelf -h lv_event.o
-          readelf -SW lv_event.o | head -80
-          readelf -sW lv_event.o | grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' || true
-          readelf -sW lv_indev.o | grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' || true
-          cat > dump_syms.py <<'PY'
-          import struct, sys
-          want = set(sys.argv[2:])
-          b=open(sys.argv[1],'rb').read()
-          if b[:4] != b'\x7fELF': raise SystemExit('not elf')
-          cls=b[4]; endian=b[5]
-          if cls!=1 or endian!=1: raise SystemExit((cls,endian))
-          eh=struct.unpack_from('<16sHHIIIIIHHHHHH',b,0)
-          e_shoff=eh[6]; e_shentsize=eh[11]; e_shnum=eh[12]; e_shstrndx=eh[13]
-          SH='<IIIIIIIIII'
-          sh=[struct.unpack_from(SH,b,e_shoff+i*e_shentsize) for i in range(e_shnum)]
-          shstr=sh[e_shstrndx]; names=b[shstr[4]:shstr[4]+shstr[5]]
-          def cstr(blob,o):
-              e=blob.find(b'\0',o); return blob[o:e].decode('utf-8','replace')
-          sn=[cstr(names,x[0]) for x in sh]
-          print('SECTIONS', [(i,sn[i],hex(x[4]),hex(x[5])) for i,x in enumerate(sh)])
-          for si,x in enumerate(sh):
-              if x[1] != 2: continue # SHT_SYMTAB
-              strsec=sh[x[6]]; st=b[strsec[4]:strsec[4]+strsec[5]]
-              entsz=x[9] or 16
-              for o in range(x[4],x[4]+x[5],entsz):
-                  st_name,st_value,st_size,st_info,st_other,st_shndx=struct.unpack_from('<IIIBBH',b,o)
-                  name=cstr(st,st_name) if st_name < len(st) else ''
-                  if name in want:
-                      sec=sh[st_shndx]
-                      raw=b[sec[4]+st_value:sec[4]+st_value+st_size]
-                      print(f'SYM {name} section={sn[st_shndx]} value=0x{st_value:x} size={st_size} hex={raw.hex()}')
+          CORE='https://raw.githubusercontent.com/1998jiangjun-sys/wificamera/d73c6826d8d4033c8696b4c22ee3c74bb2ea562a/wifi_camera/board/wl83/objs/apps/common/lvgl_v8/src/core'
+          curl -L --fail "$CORE/lv_event.c.o" -o lv_event.bc
+          curl -L --fail "$CORE/lv_indev.c.o" -o lv_indev.bc
+          file lv_event.bc lv_indev.bc
+          LLVM_DIS="$(command -v llvm-dis || command -v llvm-dis-18 || command -v llvm-dis-19 || true)"
+          LLVM_NM="$(command -v llvm-nm || command -v llvm-nm-18 || command -v llvm-nm-19 || true)"
+          echo "LLVM_DIS=$LLVM_DIS LLVM_NM=$LLVM_NM"
+          if [ -n "$LLVM_NM" ]; then
+            "$LLVM_NM" lv_event.bc | grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' || true
+            "$LLVM_NM" lv_indev.bc | grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' || true
+          fi
+          if [ -z "$LLVM_DIS" ]; then
+            echo 'llvm-dis unavailable'; exit 2
+          fi
+          "$LLVM_DIS" lv_event.bc -o lv_event.ll
+          "$LLVM_DIS" lv_indev.bc -o lv_indev.ll
+          echo '=== EVENT FUNCTIONS ==='
+          python3 - <<'PY'
+          import re
+          for fn in ['lv_event_get_code','lv_event_get_target','lv_event_get_current_target','lv_event_get_indev','lv_event_get_user_data','lv_event_stop_processing','lv_event_stop_bubbling']:
+              txt=open('lv_event.ll',errors='replace').read()
+              m=re.search(r'^define .*?@'+re.escape(fn)+r'\([^\n]*\).*?^}',txt,re.M|re.S)
+              print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
           PY
-          python3 dump_syms.py lv_event.o \
-            lv_event_get_code lv_event_get_target lv_event_get_current_target lv_event_get_indev lv_event_get_user_data \
-            lv_event_stop_processing lv_event_stop_bubbling lv_event_send
-          python3 dump_syms.py lv_indev.o \
-            lv_indev_get_gesture_dir lv_indev_get_act lv_indev_get_point lv_indev_get_vect lv_indev_get_scroll_obj lv_indev_wait_release lv_indev_reset
+          echo '=== INDEV FUNCTIONS ==='
+          python3 - <<'PY'
+          import re
+          txt=open('lv_indev.ll',errors='replace').read()
+          for fn in ['lv_indev_get_gesture_dir','lv_indev_get_act','lv_indev_get_point','lv_indev_get_vect','lv_indev_get_scroll_obj','lv_indev_wait_release','lv_indev_reset']:
+              m=re.search(r'^define .*?@'+re.escape(fn)+r'\([^\n]*\).*?^}',txt,re.M|re.S)
+              print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
+          PY
+          echo '=== TYPE DEFINITIONS ==='
+          grep -E '^%struct\.(lv_event_t|_lv_indev_t|_lv_indev_proc_t|_lv_indev_drv_t|_lv_obj_t)' lv_event.ll lv_indev.ll | head -80 || true
