@@ -9,6 +9,11 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
+      - name: Install LLVM tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm
       - name: Inspect public AC792 LVGL LLVM objects
         shell: bash
         run: |
@@ -17,23 +22,18 @@ jobs:
           curl -L --fail "$CORE/lv_event.c.o" -o lv_event.bc
           curl -L --fail "$CORE/lv_indev.c.o" -o lv_indev.bc
           file lv_event.bc lv_indev.bc
-          LLVM_DIS="$(command -v llvm-dis || command -v llvm-dis-18 || command -v llvm-dis-19 || true)"
-          LLVM_NM="$(command -v llvm-nm || command -v llvm-nm-18 || command -v llvm-nm-19 || true)"
+          LLVM_DIS="$(command -v llvm-dis || true)"
+          LLVM_NM="$(command -v llvm-nm || true)"
           echo "LLVM_DIS=$LLVM_DIS LLVM_NM=$LLVM_NM"
-          if [ -n "$LLVM_NM" ]; then
-            "$LLVM_NM" lv_event.bc | grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' || true
-            "$LLVM_NM" lv_indev.bc | grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' || true
-          fi
-          if [ -z "$LLVM_DIS" ]; then
-            echo 'llvm-dis unavailable'; exit 2
-          fi
+          "$LLVM_NM" lv_event.bc | grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' || true
+          "$LLVM_NM" lv_indev.bc | grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' || true
           "$LLVM_DIS" lv_event.bc -o lv_event.ll
           "$LLVM_DIS" lv_indev.bc -o lv_indev.ll
           echo '=== EVENT FUNCTIONS ==='
           python3 - <<'PY'
           import re
+          txt=open('lv_event.ll',errors='replace').read()
           for fn in ['lv_event_get_code','lv_event_get_target','lv_event_get_current_target','lv_event_get_indev','lv_event_get_user_data','lv_event_stop_processing','lv_event_stop_bubbling']:
-              txt=open('lv_event.ll',errors='replace').read()
               m=re.search(r'^define .*?@'+re.escape(fn)+r'\([^\n]*\).*?^}',txt,re.M|re.S)
               print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
           PY
@@ -46,4 +46,4 @@ jobs:
               print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
           PY
           echo '=== TYPE DEFINITIONS ==='
-          grep -E '^%struct\.(lv_event_t|_lv_indev_t|_lv_indev_proc_t|_lv_indev_drv_t|_lv_obj_t)' lv_event.ll lv_indev.ll | head -80 || true
+          grep -E '^%struct\.(lv_event_t|_lv_indev_t|_lv_indev_proc_t|_lv_indev_drv_t|_lv_obj_t)' lv_event.ll lv_indev.ll | head -100 || true
