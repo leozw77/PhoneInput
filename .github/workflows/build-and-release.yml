@@ -54,3 +54,34 @@ jobs:
           files: |
             PhoneInputEnhanced-Windows-x64.zip
             PhoneInputEnhanced-Windows-x64.zip.sha256
+
+  w4-re-tools:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/w4-re-helper-20260823'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build JieLi pi32v2 SLEIGH and offline pypcode kit
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y unzip git python3-pip
+          curl -L --fail --retry 3 \
+            https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.0.4_build/ghidra_12.0.4_PUBLIC_20260303.zip \
+            -o ghidra.zip
+          unzip -q ghidra.zip
+          GHIDRA="$PWD/ghidra_12.0.4_PUBLIC"
+          git clone --depth 1 https://github.com/quarkslab/ghidra-jieli.git
+          SLEIGH="$(find "$GHIDRA" -type f -name sleigh -perm -111 | head -1)"
+          echo "SLEIGH=$SLEIGH"
+          test -x "$SLEIGH"
+          "$SLEIGH" ghidra-jieli/data/languages/pi32v2.slaspec ghidra-jieli/data/languages/pi32v2.sla
+          test -s ghidra-jieli/data/languages/pi32v2.sla
+          mkdir -p w4-re-kit/jieli-languages w4-re-kit/wheels
+          cp ghidra-jieli/data/languages/* w4-re-kit/jieli-languages/
+          python3 -m pip download --only-binary=:all: --dest w4-re-kit/wheels pypcode
+          find w4-re-kit -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: w4-jieli-re-kit
+          path: w4-re-kit
