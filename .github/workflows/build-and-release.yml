@@ -70,9 +70,7 @@ jobs:
             -o ghidra.zip
           unzip -q ghidra.zip
           GHIDRA="$PWD/ghidra_12.0.4_PUBLIC"
-          git clone --depth 1 https://github.com/quarkslab/ghidra-jieli.git
-          sed -i 's/:\^/:/g' ghidra-jieli/data/languages/pi32v2.slaspec
-          sed -i '/# Code repeat/,$d' ghidra-jieli/data/languages/pi32v2_ins_progflow.sinc
+          git clone --depth 1 https://github.com/kagaimiq/ghidra-jieli.git
           SLEIGH="$GHIDRA/Ghidra/Features/Decompiler/os/linux_x86_64/sleigh"
           "$SLEIGH" ghidra-jieli/data/languages/pi32v2.slaspec ghidra-jieli/data/languages/pi32v2.sla
           test -s ghidra-jieli/data/languages/pi32v2.sla
