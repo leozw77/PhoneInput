@@ -14,36 +14,33 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm
-      - name: Inspect public AC792 LVGL LLVM objects
+
+      - name: Export public AC792 LVGL analysis inputs
         shell: bash
         run: |
           set -euxo pipefail
           CORE='https://raw.githubusercontent.com/1998jiangjun-sys/wificamera/d73c6826d8d4033c8696b4c22ee3c74bb2ea562a/wifi_camera/board/wl83/objs/apps/common/lvgl_v8/src/core'
           curl -L --fail "$CORE/lv_event.c.o" -o lv_event.bc
           curl -L --fail "$CORE/lv_indev.c.o" -o lv_indev.bc
-          file lv_event.bc lv_indev.bc
-          LLVM_DIS="$(command -v llvm-dis || true)"
-          LLVM_NM="$(command -v llvm-nm || true)"
-          echo "LLVM_DIS=$LLVM_DIS LLVM_NM=$LLVM_NM"
-          "$LLVM_NM" lv_event.bc | grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' || true
-          "$LLVM_NM" lv_indev.bc | grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' || true
-          "$LLVM_DIS" lv_event.bc -o lv_event.ll
-          "$LLVM_DIS" lv_indev.bc -o lv_indev.ll
-          echo '=== EVENT FUNCTIONS ==='
-          python3 - <<'PY'
-          import re
-          txt=open('lv_event.ll',errors='replace').read()
-          for fn in ['lv_event_get_code','lv_event_get_target','lv_event_get_current_target','lv_event_get_indev','lv_event_get_user_data','lv_event_stop_processing','lv_event_stop_bubbling']:
-              m=re.search(r'^define .*?@'+re.escape(fn)+r'\([^\n]*\).*?^}',txt,re.M|re.S)
-              print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
-          PY
-          echo '=== INDEV FUNCTIONS ==='
-          python3 - <<'PY'
-          import re
-          txt=open('lv_indev.ll',errors='replace').read()
-          for fn in ['lv_indev_get_gesture_dir','lv_indev_get_act','lv_indev_get_point','lv_indev_get_vect','lv_indev_get_scroll_obj','lv_indev_wait_release','lv_indev_reset']:
-              m=re.search(r'^define .*?@'+re.escape(fn)+r'\([^\n]*\).*?^}',txt,re.M|re.S)
-              print('\n###',fn,'###\n',m.group(0) if m else 'NOT FOUND')
-          PY
-          echo '=== TYPE DEFINITIONS ==='
-          grep -E '^%struct\.(lv_event_t|_lv_indev_t|_lv_indev_proc_t|_lv_indev_drv_t|_lv_obj_t)' lv_event.ll lv_indev.ll | head -100 || true
+          llvm-nm lv_event.bc > lv_event.nm
+          llvm-nm lv_indev.bc > lv_indev.nm
+          llvm-dis lv_event.bc -o lv_event.ll
+          llvm-dis lv_indev.bc -o lv_indev.ll
+          file lv_event.bc lv_indev.bc > file.txt
+          grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' lv_event.nm > lv_event_focus.nm || true
+          grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' lv_indev.nm > lv_indev_focus.nm || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: w4-lvgl-fingerprint-inputs
+          path: |
+            lv_event.bc
+            lv_indev.bc
+            lv_event.ll
+            lv_indev.ll
+            lv_event.nm
+            lv_indev.nm
+            lv_event_focus.nm
+            lv_indev_focus.nm
+            file.txt
+          compression-level: 0
