@@ -71,8 +71,8 @@ jobs:
           unzip -q ghidra.zip
           GHIDRA="$PWD/ghidra_12.0.4_PUBLIC"
           git clone --depth 1 https://github.com/quarkslab/ghidra-jieli.git
-          # Ghidra 12 tightened SLEIGH display syntax. These print-only constructs do not affect decoding semantics.
-          sed -i 's/\^//g' ghidra-jieli/data/languages/pi32v2.slaspec
+          # Only remove legacy display-concatenation carets after a constructor colon; preserve XOR operators in p-code.
+          sed -i 's/:\^/:/g' ghidra-jieli/data/languages/pi32v2.slaspec
           # Dynamic delayslot repeat constructors are unsupported by the current compiler; omit only that optional tail section.
           sed -i '/# Code repeat/,$d' ghidra-jieli/data/languages/pi32v2_ins_progflow.sinc
           SLEIGH="$GHIDRA/Ghidra/Features/Decompiler/os/linux_x86_64/sleigh"
