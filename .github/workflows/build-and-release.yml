@@ -71,18 +71,15 @@ jobs:
           unzip -q ghidra.zip
           GHIDRA="$PWD/ghidra_12.0.4_PUBLIC"
           git clone --depth 1 https://github.com/quarkslab/ghidra-jieli.git
-          # Only remove legacy display-concatenation carets after a constructor colon; preserve XOR operators in p-code.
           sed -i 's/:\^/:/g' ghidra-jieli/data/languages/pi32v2.slaspec
-          # Dynamic delayslot repeat constructors are unsupported by the current compiler; omit only that optional tail section.
           sed -i '/# Code repeat/,$d' ghidra-jieli/data/languages/pi32v2_ins_progflow.sinc
           SLEIGH="$GHIDRA/Ghidra/Features/Decompiler/os/linux_x86_64/sleigh"
-          echo "SLEIGH=$SLEIGH"
-          test -x "$SLEIGH"
           "$SLEIGH" ghidra-jieli/data/languages/pi32v2.slaspec ghidra-jieli/data/languages/pi32v2.sla
           test -s ghidra-jieli/data/languages/pi32v2.sla
           mkdir -p w4-re-kit/jieli-languages w4-re-kit/wheels
           cp ghidra-jieli/data/languages/* w4-re-kit/jieli-languages/
           python3 -m pip download --only-binary=:all: --dest w4-re-kit/wheels pypcode
+          python3 -m pip download --only-binary=:all: --dest w4-re-kit/wheels --platform manylinux_2_28_x86_64 --implementation cp --python-version 313 --abi cp313 pypcode
           find w4-re-kit -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
 
       - uses: actions/upload-artifact@v4
