@@ -19,28 +19,29 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          CORE='https://raw.githubusercontent.com/1998jiangjun-sys/wificamera/d73c6826d8d4033c8696b4c22ee3c74bb2ea562a/wifi_camera/board/wl83/objs/apps/common/lvgl_v8/src/core'
-          curl -L --fail "$CORE/lv_event.c.o" -o lv_event.bc
-          curl -L --fail "$CORE/lv_indev.c.o" -o lv_indev.bc
-          llvm-nm lv_event.bc > lv_event.nm
-          llvm-nm lv_indev.bc > lv_indev.nm
-          llvm-dis lv_event.bc -o lv_event.ll
-          llvm-dis lv_indev.bc -o lv_indev.ll
-          file lv_event.bc lv_indev.bc > file.txt
-          grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send' lv_event.nm > lv_event_focus.nm || true
+          ROOT='https://raw.githubusercontent.com/1998jiangjun-sys/wificamera/d73c6826d8d4033c8696b4c22ee3c74bb2ea562a/wifi_camera/board/wl83/objs/apps/common/lvgl_v8/src'
+          curl -L --fail "$ROOT/core/lv_event.c.o" -o lv_event.bc
+          curl -L --fail "$ROOT/core/lv_indev.c.o" -o lv_indev.bc
+          curl -L --fail "$ROOT/core/lv_obj.c.o" -o lv_obj.bc
+          curl -L --fail "$ROOT/core/lv_obj_class.c.o" -o lv_obj_class.bc
+          curl -L --fail "$ROOT/widgets/lv_img.c.o" -o lv_img.bc
+          for f in lv_event lv_indev lv_obj lv_obj_class lv_img; do
+            llvm-nm "$f.bc" > "$f.nm"
+            llvm-dis "$f.bc" -o "$f.ll"
+          done
+          file *.bc > file.txt
+          grep -E 'lv_event_get_(code|target|current_target|indev|user_data)|lv_event_stop_(processing|bubbling)|lv_event_send|lv_obj_add_event_cb' lv_event.nm > lv_event_focus.nm || true
           grep -E 'lv_indev_get_(gesture_dir|act|point|vect|scroll_obj)|lv_indev_wait_release|lv_indev_reset' lv_indev.nm > lv_indev_focus.nm || true
+          grep -E 'lv_img_(create|set_src|set_offset|set_angle|set_zoom)|lv_img_class' lv_img.nm > lv_img_focus.nm || true
+          grep -E 'lv_obj_class_(create_obj|init_obj)' lv_obj_class.nm > lv_obj_class_focus.nm || true
+          grep -E 'lv_obj_(create|add_flag|clear_flag|set_size|set_pos|set_x|set_y)' lv_obj.nm > lv_obj_focus.nm || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: w4-lvgl-fingerprint-inputs
           path: |
-            lv_event.bc
-            lv_indev.bc
-            lv_event.ll
-            lv_indev.ll
-            lv_event.nm
-            lv_indev.nm
-            lv_event_focus.nm
-            lv_indev_focus.nm
+            *.bc
+            *.ll
+            *.nm
             file.txt
           compression-level: 0
