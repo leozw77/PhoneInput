@@ -71,7 +71,7 @@ jobs:
           unzip -q ghidra.zip
           GHIDRA="$PWD/ghidra_12.0.4_PUBLIC"
           git clone --depth 1 https://github.com/quarkslab/ghidra-jieli.git
-          SLEIGH="$(find "$GHIDRA" -type f -name sleigh -perm -111 | head -1)"
+          SLEIGH="$GHIDRA/Ghidra/Features/Decompiler/os/linux_x86_64/sleigh"
           echo "SLEIGH=$SLEIGH"
           test -x "$SLEIGH"
           "$SLEIGH" ghidra-jieli/data/languages/pi32v2.slaspec ghidra-jieli/data/languages/pi32v2.sla
