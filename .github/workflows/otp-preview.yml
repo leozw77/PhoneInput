@@ -1,0 +1,65 @@
+name: PhoneInput OTP preview
+
+on:
+  push:
+    branches: [feature/otp-notification-integration]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/android-native/**'
+      - 'native/cmd/touchpadhost/**'
+      - 'native/otp-panel/**'
+      - '.github/workflows/otp-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build Android preview APK
+        working-directory: native/android-native
+        run: gradle --no-daemon :app:assembleDebug
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Windows OTP panel
+        run: dotnet publish .\native\otp-panel\PhoneInputOtpPanel.csproj -c Release -o .\out\PhoneInputOtpPreview
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Build Windows touchpad host
+        working-directory: native
+        run: go build -trimpath -ldflags='-H=windowsgui' -o ..\out\PhoneInputOtpPreview\PhoneInputTouchpadHost.exe .\cmd\touchpadhost
+
+      - name: Collect preview APK
+        shell: pwsh
+        run: Copy-Item .\native\android-native\app\build\outputs\apk\debug\app-debug.apk .\out\PhoneInputOtpPreview\PhoneInputEnhanced-OTP-Preview.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneInput-OTP-Preview
+          path: out/PhoneInputOtpPreview/*
+          if-no-files-found: error
+          retention-days: 14

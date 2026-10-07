@@ -62,6 +62,20 @@ type textRequest struct {
 	EnterAfter bool   `json:"enterAfter"`
 }
 
+type otpRecord struct {
+	Code       string    `json:"code"`
+	Sender     string    `json:"sender"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	EventID    string    `json:"eventId"`
+}
+
+type otpRequest struct {
+	Code       string `json:"code"`
+	Sender     string `json:"sender"`
+	ReceivedAt int64  `json:"receivedAt"`
+	EventID    string `json:"eventId"`
+}
+
 type server struct {
 	logger       *log.Logger
 	connMu       sync.Mutex
@@ -81,6 +95,8 @@ type server struct {
 	downloadBytes     int64
 	lastTransfer      string
 	lastTransferError string
+	latestOTPMu       sync.RWMutex
+	latestOTP         otpRecord
 }
 
 func main() {
@@ -99,6 +115,8 @@ func main() {
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/v2/ws", s.handleV2WebSocket)
 	mux.HandleFunc("/api/text", s.handleText)
+	mux.HandleFunc("/api/otp", s.handleOTP)
+	mux.HandleFunc("/api/otp/latest", s.handleLatestOTP)
 	mux.HandleFunc("/api/key/", s.handleKey)
 	mux.HandleFunc("/api/hotkey/", s.handleHotkey)
 	mux.HandleFunc("/api/clipboard", s.handleClipboard)
@@ -125,6 +143,68 @@ func main() {
 		logger.Printf("Host stopped: %v", err)
 	}
 	s.clearAllSessionInput()
+}
+
+func (s *server) handleOTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if mediaType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0])); mediaType != "application/json" {
+		writeJSONError(w, http.StatusUnsupportedMediaType, "application/json required")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var request otpRequest
+	if err := decoder.Decode(&request); err != nil || ensureJSONEOF(decoder) != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid OTP request")
+		return
+	}
+	if len(request.Code) < 4 || len(request.Code) > 8 || !allASCIIDigits(request.Code) || len(request.EventID) > 256 {
+		writeJSONError(w, http.StatusBadRequest, "invalid OTP record")
+		return
+	}
+	receivedAt := time.UnixMilli(request.ReceivedAt)
+	if request.ReceivedAt <= 0 || receivedAt.After(time.Now().Add(time.Minute)) || receivedAt.Before(time.Now().Add(-24*time.Hour)) {
+		receivedAt = time.Now()
+	}
+	record := otpRecord{
+		Code: request.Code, Sender: safeLogValue(request.Sender, 120),
+		ReceivedAt: receivedAt, EventID: request.EventID,
+	}
+	s.latestOTPMu.Lock()
+	s.latestOTP = record
+	s.latestOTPMu.Unlock()
+	// Deliberately do not log the verification code or notification body.
+	s.logger.Printf("OTP received; notification metadata accepted")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) handleLatestOTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	s.latestOTPMu.RLock()
+	record := s.latestOTP
+	s.latestOTPMu.RUnlock()
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(record)
+}
+
+func allASCIIDigits(value string) bool {
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func newServer(logger *log.Logger) *server {

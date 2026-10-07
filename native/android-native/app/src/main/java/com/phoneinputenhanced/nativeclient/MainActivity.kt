@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -52,6 +53,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     private var resumed = false
     private var settings = AppSettings()
     private var activeWindowTarget = "other"
+    private var connectionStatusText = "未连接"
 
     private val prefs by lazy { getSharedPreferences("phoneinput_native", MODE_PRIVATE) }
 
@@ -129,6 +131,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     override fun onResume() {
         super.onResume()
         resumed = true
+        updateOtpPermissionStatus()
         client.onAppForeground()
         main.removeCallbacks(windowPoll)
         main.post(windowPoll)
@@ -164,7 +167,8 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
             NativeWebSocket.State.Connected -> "已连接"
             NativeWebSocket.State.Reconnecting -> "重连中"
         }
-        statusView.text = if (detail.isBlank()) label else "$label · $detail"
+        connectionStatusText = if (detail.isBlank()) label else "$label · $detail"
+        updateOtpPermissionStatus()
         connectButton.text = if (state == NativeWebSocket.State.Connected) "断开" else "连接"
         val active = state == NativeWebSocket.State.Connected
         touchpad.alpha = if (active) 1f else 0.64f
@@ -190,7 +194,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
 
         val titleRow = row().apply { gravity = Gravity.CENTER_VERTICAL }
         titleRow.addView(TextView(this).apply {
-            text = "PhoneInputEnhanced · Native 1.4.0"
+            text = "PhoneInputEnhanced · ${BuildConfig.VERSION_NAME}"
             setTextColor(Color.WHITE)
             textSize = 18f
             setTypeface(typeface, Typeface.BOLD)
@@ -206,6 +210,10 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
             textSize = 12f
             isSingleLine = true
             setPadding(dp(4), 0, dp(4), dp(6))
+            setOnClickListener {
+                runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                    .onFailure { showBrief("无法打开通知访问设置") }
+            }
         }
         root.addView(statusView, fullWidth(wrap()))
 
@@ -562,6 +570,15 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     }
 
     private fun showBrief(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    private fun updateOtpPermissionStatus() {
+        if (!::statusView.isInitialized) return
+        val component = ComponentName(this, OtpNotificationListener::class.java).flattenToString()
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            ?.split(':')?.contains(component) == true
+        statusView.text = "$connectionStatusText · 验证码通知${if (enabled) "已授权" else "未授权，点此设置"}"
+        statusView.setTextColor(if (enabled) Color.rgb(174, 209, 185) else Color.rgb(174, 183, 204))
+    }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
     private fun actionButton(text: String, action: () -> Unit) = Button(this).apply {
