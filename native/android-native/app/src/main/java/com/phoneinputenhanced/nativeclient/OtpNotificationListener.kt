@@ -4,7 +4,7 @@ import android.app.Notification
 import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import android.telephony.Telephony
+import android.provider.Telephony
 import android.util.Log
 import org.json.JSONObject
 import java.net.HttpURLConnection
