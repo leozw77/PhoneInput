@@ -1,8 +1,12 @@
 package com.phoneinputenhanced.nativeclient
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import org.json.JSONObject
+import java.io.IOException
+import java.net.InetAddress
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -80,21 +84,15 @@ internal object OtpForwarder {
         for (attempt in 0..2) {
             val startedAt = System.nanoTime()
             var connection: HttpURLConnection? = null
-            var stage = "open_connection"
             try {
-                val activeConnection = URL("http://$host:51877/api/otp").openConnection() as HttpURLConnection
+                val activeConnection = openLocalNetworkConnection(context, host)
                 connection = activeConnection
-                stage = "configure_request"
                 activeConnection.requestMethod = "POST"
                 activeConnection.connectTimeout = 2500
                 activeConnection.readTimeout = 2500
                 activeConnection.doOutput = true
                 activeConnection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                stage = "open_request_body"
-                val output = activeConnection.outputStream
-                stage = "write_request_body"
-                output.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                stage = "read_response"
+                activeConnection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 val status = activeConnection.responseCode
                 val durationMs = (System.nanoTime() - startedAt) / 1_000_000
                 OtpDiagnosticLog.record(context, if (status in 200..299) Log.INFO else Log.WARN,
@@ -107,9 +105,9 @@ internal object OtpForwarder {
             } catch (error: Exception) {
                 val durationMs = (System.nanoTime() - startedAt) / 1_000_000
                 OtpDiagnosticLog.record(context, Log.WARN,
-                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs stage=$stage exception=${error.javaClass.simpleName} detail=${safeErrorDetail(error)}")
+                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs exception=${error.javaClass.simpleName}")
                 if (attempt == 2) OtpDiagnosticLog.record(context, Log.ERROR,
-                    "source=$source event=forward_result trace=$trace result=failed stage=$stage reason=${error.javaClass.simpleName}")
+                    "source=$source event=forward_result trace=$trace result=failed reason=${error.javaClass.simpleName}")
             } finally {
                 connection?.disconnect()
             }
@@ -117,12 +115,30 @@ internal object OtpForwarder {
         }
     }
 
-    private fun safeErrorDetail(error: Exception): String = (error.message ?: "")
-        .replace(Regex("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"), "<ip>")
-        .replace(Regex("\\b\\d{4,8}\\b"), "<number>")
-        .replace(Regex("[\\r\\n\\t ]+"), " ")
-        .take(120)
-        .ifBlank { "none" }
+    /** Opens the OTP request on the physical LAN network, bypassing an active VPN default route. */
+    private fun openLocalNetworkConnection(context: Context, host: String): HttpURLConnection {
+        val target = InetAddress.getByName(host)
+        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivity.allNetworks
+            .asSequence()
+            .mapNotNull { candidate ->
+                val capabilities = connectivity.getNetworkCapabilities(candidate) ?: return@mapNotNull null
+                if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) ||
+                    (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                        !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) {
+                    return@mapNotNull null
+                }
+                val prefixLength = connectivity.getLinkProperties(candidate)?.routes
+                    ?.filter { it.matches(target) }
+                    ?.maxOfOrNull { it.destination.prefixLength }
+                prefixLength?.let { candidate to it }
+            }
+            .maxByOrNull { it.second }
+            ?.first
+            ?: throw IOException("No non-VPN LAN route to configured host")
+
+        return network.openConnection(URL("http://$host:51877/api/otp")) as HttpURLConnection
+    }
 
     private fun stableId(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
