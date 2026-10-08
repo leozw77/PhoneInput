@@ -79,15 +79,23 @@ internal object OtpForwarder {
             .put("receivedAt", receivedAt).put("eventId", eventId).put("source", source).toString()
         for (attempt in 0..2) {
             val startedAt = System.nanoTime()
-            val connection = URL("http://$host:51877/api/otp").openConnection() as HttpURLConnection
+            var connection: HttpURLConnection? = null
+            var stage = "open_connection"
             try {
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 2500
-                connection.readTimeout = 2500
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                val status = connection.responseCode
+                val activeConnection = URL("http://$host:51877/api/otp").openConnection() as HttpURLConnection
+                connection = activeConnection
+                stage = "configure_request"
+                activeConnection.requestMethod = "POST"
+                activeConnection.connectTimeout = 2500
+                activeConnection.readTimeout = 2500
+                activeConnection.doOutput = true
+                activeConnection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                stage = "open_request_body"
+                val output = activeConnection.outputStream
+                stage = "write_request_body"
+                output.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                stage = "read_response"
+                val status = activeConnection.responseCode
                 val durationMs = (System.nanoTime() - startedAt) / 1_000_000
                 OtpDiagnosticLog.record(context, if (status in 200..299) Log.INFO else Log.WARN,
                     "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs httpStatus=$status")
@@ -99,15 +107,22 @@ internal object OtpForwarder {
             } catch (error: Exception) {
                 val durationMs = (System.nanoTime() - startedAt) / 1_000_000
                 OtpDiagnosticLog.record(context, Log.WARN,
-                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs exception=${error.javaClass.simpleName}")
+                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs stage=$stage exception=${error.javaClass.simpleName} detail=${safeErrorDetail(error)}")
                 if (attempt == 2) OtpDiagnosticLog.record(context, Log.ERROR,
-                    "source=$source event=forward_result trace=$trace result=failed reason=${error.javaClass.simpleName}")
+                    "source=$source event=forward_result trace=$trace result=failed stage=$stage reason=${error.javaClass.simpleName}")
             } finally {
-                connection.disconnect()
+                connection?.disconnect()
             }
             if (attempt < 2) Thread.sleep(300L * (attempt + 1))
         }
     }
+
+    private fun safeErrorDetail(error: Exception): String = (error.message ?: "")
+        .replace(Regex("\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"), "<ip>")
+        .replace(Regex("\\b\\d{4,8}\\b"), "<number>")
+        .replace(Regex("[\\r\\n\\t ]+"), " ")
+        .take(120)
+        .ifBlank { "none" }
 
     private fun stableId(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
