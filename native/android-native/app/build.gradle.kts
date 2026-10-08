@@ -11,8 +11,8 @@ android {
         applicationId = "com.phoneinputenhanced.nativeclient"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.4.1-otp-preview.2"
+        versionCode = 16
+        versionName = "1.4.1-otp-preview.3"
     }
 
     buildFeatures {
@@ -21,7 +21,7 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".otpPreview"
+            applicationIdSuffix = ".otpPreview2"
         }
         release {
             isMinifyEnabled = false

@@ -13,7 +13,7 @@ The SMS or notification body is neither stored nor sent to the computer. A share
 
 ## Preview installation
 
-- Install `PhoneInputEnhanced-OTP-Preview.apk` alongside the existing stable app. It uses a separate preview package ID and has its own settings.
+- Install `PhoneInputEnhanced-OTP-Preview.apk` alongside the existing stable app. It uses the separate `com.phoneinputenhanced.nativeclient.otpPreview2` preview package ID and has its own settings; the earlier `.otpPreview` install remains untouched.
 - Open the preview app, enter the PC's existing PhoneInput address, and connect once so the address is saved.
 - Tap the connection-status line and grant SMS permission, then tap it again to open notification access settings if desired. The line shows each permission state.
 - Replace the running Native host with the preview `PhoneInputTouchpadHost.exe` while preserving the stable install as a rollback copy; the Windows host already used by the Native app owns port 51877.
