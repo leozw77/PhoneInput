@@ -1,5 +1,6 @@
 package com.phoneinputenhanced.nativeclient
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import org.json.JSONObject
@@ -16,7 +17,9 @@ import java.util.concurrent.Executors
  * Realtime writes use one serial executor so selection -> delete -> text/key ordering stays stable.
  * Status/readback uses a separate executor so a slow read cannot stall active typing.
  */
-class NativeCoreApi {
+class NativeCoreApi(context: Context) {
+    private val appContext = context.applicationContext
+
     data class Result(val ok: Boolean, val message: String = "")
 
     data class StatusResult(
@@ -387,7 +390,9 @@ class NativeCoreApi {
                 return@execute
             }
             val result = runCatching {
-                val connection = (URL("http://$normalized:${ProtocolV2.PORT}/api/screenshot").openConnection() as HttpURLConnection).apply {
+                val connection = LocalLanNetwork.openConnection(
+                    appContext, normalized, URL("http://$normalized:${ProtocolV2.PORT}/api/screenshot"),
+                ).apply {
                     requestMethod = "GET"
                     connectTimeout = 3000
                     readTimeout = 12000
@@ -448,7 +453,7 @@ class NativeCoreApi {
         if (normalized.isBlank()) return HttpResult(false, 0, null, "电脑地址为空")
         return runCatching {
             val url = URL("http://$normalized:${ProtocolV2.PORT}$path")
-            val connection = (url.openConnection() as HttpURLConnection).apply {
+            val connection = LocalLanNetwork.openConnection(appContext, normalized, url).apply {
                 requestMethod = method
                 connectTimeout = 3000
                 readTimeout = 8000

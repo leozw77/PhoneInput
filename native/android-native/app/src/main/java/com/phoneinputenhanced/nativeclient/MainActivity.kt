@@ -81,8 +81,8 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
         window.navigationBarColor = Color.rgb(17, 19, 24)
 
         settings = AppSettings.load(this)
-        client = NativeWebSocket(this)
-        coreApi = NativeCoreApi()
+        client = NativeWebSocket(this, this)
+        coreApi = NativeCoreApi(this)
         inputDialog = NativeInputDialog(
             activity = this,
             api = coreApi,

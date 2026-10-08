@@ -1,5 +1,6 @@
 package com.phoneinputenhanced.nativeclient
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -22,8 +23,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 class NativeWebSocket(
+    context: Context,
     private val listener: Listener,
 ) {
+    private val appContext = context.applicationContext
     interface Listener {
         fun onStateChanged(state: State, detail: String = "")
         fun onProtocolMessage(message: String)
@@ -228,7 +231,7 @@ class NativeWebSocket(
         var local: Socket? = null
         try {
             if (reconnecting) postState(State.Reconnecting, "$host:${ProtocolV2.PORT}")
-            local = Socket()
+            local = LocalLanNetwork.createSocket(appContext, host)
             local.tcpNoDelay = true
             local.keepAlive = true
             local.connect(InetSocketAddress(host, ProtocolV2.PORT), 2500)

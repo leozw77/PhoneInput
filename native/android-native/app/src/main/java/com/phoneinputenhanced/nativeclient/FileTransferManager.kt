@@ -115,7 +115,9 @@ class FileTransferManager(
 
     private fun uploadOne(host: String, uri: Uri, name: String, mime: String, category: String): Boolean {
         return runCatching {
-            val connection = (URL("http://$host:${ProtocolV2.PORT}/api/files/upload").openConnection() as HttpURLConnection).apply {
+            val connection = LocalLanNetwork.openConnection(
+                context, host, URL("http://$host:${ProtocolV2.PORT}/api/files/upload"),
+            ).apply {
                 requestMethod = "POST"
                 connectTimeout = 4000
                 readTimeout = 60_000
@@ -160,7 +162,9 @@ class FileTransferManager(
     }
 
     private fun readPending(host: String): List<PendingFile> = runCatching {
-        val connection = (URL("http://$host:${ProtocolV2.PORT}/api/files/pending").openConnection() as HttpURLConnection).apply {
+        val connection = LocalLanNetwork.openConnection(
+            context, host, URL("http://$host:${ProtocolV2.PORT}/api/files/pending"),
+        ).apply {
             requestMethod = "GET"
             connectTimeout = 2500
             readTimeout = 4000
@@ -209,7 +213,9 @@ class FileTransferManager(
 
     private fun downloadOne(host: String, file: PendingFile): Boolean = runCatching {
         val encodedToken = URLEncoder.encode(file.token, Charsets.UTF_8.name())
-        val connection = (URL("http://$host:${ProtocolV2.PORT}/api/files/download/${file.id}?token=$encodedToken").openConnection() as HttpURLConnection).apply {
+        val connection = LocalLanNetwork.openConnection(
+            context, host, URL("http://$host:${ProtocolV2.PORT}/api/files/download/${file.id}?token=$encodedToken"),
+        ).apply {
             requestMethod = "GET"
             connectTimeout = 4000
             readTimeout = 120_000
@@ -256,7 +262,9 @@ class FileTransferManager(
     private fun markComplete(host: String, file: PendingFile) {
         runCatching {
             val token = URLEncoder.encode(file.token, Charsets.UTF_8.name())
-            val c = (URL("http://$host:${ProtocolV2.PORT}/api/files/complete/${file.id}?token=$token").openConnection() as HttpURLConnection).apply {
+            val c = LocalLanNetwork.openConnection(
+                context, host, URL("http://$host:${ProtocolV2.PORT}/api/files/complete/${file.id}?token=$token"),
+            ).apply {
                 requestMethod = "POST"
                 connectTimeout = 2000
                 readTimeout = 2000

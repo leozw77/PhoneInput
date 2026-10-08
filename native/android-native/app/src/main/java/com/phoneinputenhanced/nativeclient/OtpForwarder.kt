@@ -1,12 +1,8 @@
 package com.phoneinputenhanced.nativeclient
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.util.Log
 import org.json.JSONObject
-import java.io.IOException
-import java.net.InetAddress
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -85,7 +81,9 @@ internal object OtpForwarder {
             val startedAt = System.nanoTime()
             var connection: HttpURLConnection? = null
             try {
-                val activeConnection = openLocalNetworkConnection(context, host)
+                val activeConnection = LocalLanNetwork.openConnection(
+                    context, host, URL("http://$host:51877/api/otp"),
+                )
                 connection = activeConnection
                 activeConnection.requestMethod = "POST"
                 activeConnection.connectTimeout = 2500
@@ -113,31 +111,6 @@ internal object OtpForwarder {
             }
             if (attempt < 2) Thread.sleep(300L * (attempt + 1))
         }
-    }
-
-    /** Opens the OTP request on the physical LAN network, bypassing an active VPN default route. */
-    private fun openLocalNetworkConnection(context: Context, host: String): HttpURLConnection {
-        val target = InetAddress.getByName(host)
-        val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivity.allNetworks
-            .asSequence()
-            .mapNotNull { candidate ->
-                val capabilities = connectivity.getNetworkCapabilities(candidate) ?: return@mapNotNull null
-                if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) ||
-                    (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
-                        !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))) {
-                    return@mapNotNull null
-                }
-                val prefixLength = connectivity.getLinkProperties(candidate)?.routes
-                    ?.filter { it.matches(target) }
-                    ?.maxOfOrNull { it.destination.prefixLength }
-                prefixLength?.let { candidate to it }
-            }
-            .maxByOrNull { it.second }
-            ?.first
-            ?: throw IOException("No non-VPN LAN route to configured host")
-
-        return network.openConnection(URL("http://$host:51877/api/otp")) as HttpURLConnection
     }
 
     private fun stableId(value: String): String = MessageDigest.getInstance("SHA-256")
