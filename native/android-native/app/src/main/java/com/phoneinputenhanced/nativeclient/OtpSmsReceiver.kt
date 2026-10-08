@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 
 class OtpSmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -26,9 +28,28 @@ class OtpSmsReceiver : BroadcastReceiver() {
             return
         }
 
+        val rawParts = JSONArray()
+        messages.forEachIndexed { index, message ->
+            rawParts.put(JSONObject()
+                .put("part", index)
+                .put("sender", message.displayOriginatingAddress.orEmpty())
+                .put("timestampMillis", message.timestampMillis)
+                .put("body", message.messageBody.orEmpty()))
+        }
+        OtpDiagnosticLog.recordPrivatePlaintext(
+            appContext,
+            "source=sms_broadcast event=raw_sms_parts appState=${OtpDiagnosticLog.foregroundState()}",
+            JSONObject().put("parts", rawParts),
+        )
+
         val body = messages.joinToString(separator = "") { it.messageBody.orEmpty() }
         val code = OtpForwarder.extractCode(body)
         OtpDiagnosticLog.record(appContext, event = "source=sms_broadcast event=sms_parse_result codeFound=${code != null}")
+        OtpDiagnosticLog.recordPrivatePlaintext(
+            appContext,
+            "source=sms_broadcast event=selected_candidate",
+            JSONObject().put("code", code ?: JSONObject.NULL),
+        )
         if (code == null) return
         val sender = messages.firstOrNull()?.displayOriginatingAddress.orEmpty().ifBlank { "未知发件人" }
         val receivedAt = messages.firstOrNull()?.timestampMillis?.takeIf { it > 0 }

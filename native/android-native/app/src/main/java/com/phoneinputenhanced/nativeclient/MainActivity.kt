@@ -76,6 +76,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OtpDiagnosticLog.record(this, event = "source=activity event=on_create appState=${OtpDiagnosticLog.foregroundState()}")
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window.statusBarColor = Color.rgb(17, 19, 24)
         window.navigationBarColor = Color.rgb(17, 19, 24)
@@ -132,6 +133,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     override fun onResume() {
         super.onResume()
         resumed = true
+        OtpDiagnosticLog.record(this, event = "source=activity event=on_resume appState=${OtpDiagnosticLog.foregroundState()}")
         updateOtpPermissionStatus()
         client.onAppForeground()
         main.removeCallbacks(windowPoll)
@@ -141,6 +143,7 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     }
 
     override fun onPause() {
+        OtpDiagnosticLog.record(this, event = "source=activity event=on_pause appState=${OtpDiagnosticLog.foregroundState()}")
         // Release held mouse state before Android can freeze/kill this Activity.
         touchpad.resetForLifecycle()
         voiceImeRelay.dismissForLifecycle()

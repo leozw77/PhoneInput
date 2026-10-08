@@ -3,6 +3,7 @@ package com.phoneinputenhanced.nativeclient
 import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
+import org.json.JSONObject
 import java.io.File
 
 /** Privacy-safe OTP flow diagnostics mirrored to logcat and a bounded app-private file. */
@@ -26,6 +27,16 @@ internal object OtpDiagnosticLog {
             Log.WARN -> Log.w(TAG, event)
             else -> Log.i(TAG, event)
         }
+        append(context, line)
+    }
+
+    /** Writes user-authorized message plaintext only to the app-private file, never to logcat or the PC host. */
+    fun recordPrivatePlaintext(context: Context, event: String, data: JSONObject) {
+        val payload = data.toString().take(MAX_PRIVATE_PAYLOAD_CHARS)
+        append(context, "${System.currentTimeMillis()} PRIVATE_PLAINTEXT $event payload=$payload\n")
+    }
+
+    private fun append(context: Context, line: String) {
         runCatching {
             synchronized(lock) {
                 val file = File(context.filesDir, FILE_NAME)
@@ -37,4 +48,6 @@ internal object OtpDiagnosticLog {
             }
         }.onFailure { Log.w(TAG, "diagnostic_file_write_failed; reason=${it.javaClass.simpleName}") }
     }
+
+    private const val MAX_PRIVATE_PAYLOAD_CHARS = 12_000
 }

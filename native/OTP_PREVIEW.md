@@ -13,7 +13,7 @@ The SMS or notification body is neither stored nor sent to the computer. A share
 
 ## OTP diagnostics
 
-The Android preview mirrors privacy-safe flow events to logcat (`PhoneInputOTP`) and to the bounded app-private file `files/otp-diagnostics.log` (maximum 256 KiB, trimmed to the newest 128 KiB). Events identify the source (`sms_broadcast` or `notification`), parse outcome, configured-host decision, deduplication decision, each HTTP attempt and result. A random trace ID links those events to the Windows Host's `OTP event=host_received` entry. No OTP, message body, sender, notification key, or PC IP is written to these diagnostics.
+The `.3-diagnostic1` build additionally records plaintext SMS parts, the default SMS app's notification text fields, the exact parser input and selected candidate, plus Activity and notification-listener lifecycle events in the bounded app-private file `files/otp-diagnostics.log` (maximum 256 KiB, trimmed to the newest 128 KiB). Plaintext entries are written only to this app-private file, never to logcat or the Windows Host. Treat this file as sensitive and remove the diagnostic build after the cause is identified. Ordinary flow events remain mirrored to logcat (`PhoneInputOTP`) and the same file, with a trace ID linking forwarding to the Windows Host's `OTP event=host_received` entry.
 
 For the debug preview package, the file can be read without opening the app using Android's `run-as` for `com.phoneinputenhanced.nativeclient.otpPreview2`, or the same events can be collected from logcat. This makes it possible to tell whether a background SMS broadcast reached the receiver, whether it contained a recognizable code, and where forwarding stopped.
 
