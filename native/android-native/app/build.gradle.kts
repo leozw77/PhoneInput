@@ -11,8 +11,8 @@ android {
         applicationId = "com.phoneinputenhanced.nativeclient"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.4.1-otp-preview.1"
+        versionCode = 15
+        versionName = "1.4.1-otp-preview.2"
     }
 
     buildFeatures {

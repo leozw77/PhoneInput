@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.graphics.Color
 import android.graphics.Typeface
@@ -211,8 +212,12 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
             isSingleLine = true
             setPadding(dp(4), 0, dp(4), dp(6))
             setOnClickListener {
-                runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-                    .onFailure { showBrief("无法打开通知访问设置") }
+                if (checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(android.Manifest.permission.RECEIVE_SMS), REQUEST_SMS_PERMISSION)
+                } else {
+                    runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                        .onFailure { showBrief("无法打开通知访问设置") }
+                }
             }
         }
         root.addView(statusView, fullWidth(wrap()))
@@ -571,13 +576,24 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
 
     private fun showBrief(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_SMS_PERMISSION) {
+            updateOtpPermissionStatus()
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                showBrief("短信验证码后台接收已授权")
+            }
+        }
+    }
+
     private fun updateOtpPermissionStatus() {
         if (!::statusView.isInitialized) return
         val component = ComponentName(this, OtpNotificationListener::class.java).flattenToString()
-        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        val notificationEnabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
             ?.split(':')?.contains(component) == true
-        statusView.text = "$connectionStatusText · 验证码通知${if (enabled) "已授权" else "未授权，点此设置"}"
-        statusView.setTextColor(if (enabled) Color.rgb(174, 209, 185) else Color.rgb(174, 183, 204))
+        val smsEnabled = checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        statusView.text = "$connectionStatusText · 短信${if (smsEnabled) "已授权" else "未授权"} · 通知${if (notificationEnabled) "已授权" else "未授权"}（点此设置）"
+        statusView.setTextColor(if (smsEnabled && notificationEnabled) Color.rgb(174, 209, 185) else Color.rgb(174, 183, 204))
     }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
 
@@ -612,5 +628,6 @@ class MainActivity : Activity(), NativeWebSocket.Listener {
     companion object {
         private const val REQUEST_IMAGE = 4101
         private const val REQUEST_FILE = 4102
+        private const val REQUEST_SMS_PERMISSION = 4103
     }
 }
