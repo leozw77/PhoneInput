@@ -5,7 +5,7 @@ This preview adds background SMS broadcast reception and a notification listener
 ## Data path
 
 1. On Android, tap the connection-status line and grant the requested `RECEIVE_SMS` permission. This enables the background `SMS_RECEIVED` path; PhoneInput does not request inbox-read access or scan message history.
-2. Grant notification access from the same status line as a supplementary path. Notifications are read from the current default SMS app only.
+2. Grant notification access from the same status line as a supplementary path. Notifications are read from the current default SMS app only. While that listener is connected, the app also checks active SMS notifications every five seconds so a missed post callback can still be recovered without opening the APK.
 3. Either path extracts a 4–8 digit code and sends only the code, sender label, receive time, and deduplication ID to the saved computer IP over the existing local network connection.
 4. The Windows touchpad host keeps the latest code in memory. The separately launched `PhoneInputOtpPanel.exe` displays it and can type it into the foreground input target, copy it, or send user-maintained snippets and custom keys.
 
@@ -13,7 +13,7 @@ The SMS or notification body is neither stored nor sent to the computer. A share
 
 ## OTP diagnostics
 
-The Android preview mirrors privacy-safe flow events to logcat (`PhoneInputOTP`) and to the bounded app-private file `files/otp-diagnostics.log` (maximum 256 KiB, trimmed to the newest 128 KiB). Events identify the source (`sms_broadcast` or `notification`), parse outcome, configured-host decision, deduplication decision, each HTTP attempt and result. A random trace ID links those events to the Windows Host's `OTP event=host_received` entry. No OTP, message body, sender, notification key, or PC IP is written to these diagnostics.
+The Android preview mirrors privacy-safe flow events to logcat (`PhoneInputOTP`) and to the bounded app-private file `files/otp-diagnostics.log` (maximum 256 KiB, trimmed to the newest 128 KiB). Events identify the source (`sms_broadcast` or `notification`), notification-listener connection and filtering outcome, parse outcome, configured-host decision, deduplication decision, each HTTP attempt and result. A random trace ID links those events to the Windows Host's `OTP event=host_received` entry. No OTP, message body, sender, notification key, or PC IP is written to these diagnostics; notification package names may appear when the listener explains why an event was filtered.
 
 For the debug preview package, the file can be read without opening the app using Android's `run-as` for `com.phoneinputenhanced.nativeclient.otpPreview2`, or the same events can be collected from logcat. This makes it possible to tell whether a background SMS broadcast reached the receiver, whether it contained a recognizable code, and where forwarding stopped.
 

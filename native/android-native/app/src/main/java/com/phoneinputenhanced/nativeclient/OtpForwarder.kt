@@ -21,6 +21,8 @@ internal object OtpForwarder {
     )
     private val anyCode = Regex("(?<![0-9])([0-9]{4,8})(?![0-9])")
 
+    fun hasSavedHost(context: Context): Boolean = savedHost(context) != null
+
     fun extractCode(text: String): String? = contextual.find(text)?.groupValues?.getOrNull(1)
         ?: anyCode.find(text)?.groupValues?.getOrNull(1)
 
@@ -34,6 +36,13 @@ internal object OtpForwarder {
         traceId: String,
         onComplete: () -> Unit = {},
     ) {
+        val host = savedHost(context)
+        if (host.isNullOrBlank()) {
+            OtpDiagnosticLog.record(context, Log.WARN, "source=$source event=forward_decision trace=${traceId.take(12)} result=skip reason=no_saved_host")
+            onComplete()
+            return
+        }
+
         val sourceKey = stableId(sourceId)
         val trace = traceId.take(12)
         val now = System.currentTimeMillis()
@@ -59,21 +68,14 @@ internal object OtpForwarder {
 
         io.execute {
             try {
-                forwardOnce(context, code, sender, receivedAt, traceId, source, trace)
+                forwardOnce(context, host, code, sender, receivedAt, traceId, source, trace)
             } finally {
                 onComplete()
             }
         }
     }
 
-    private fun forwardOnce(context: Context, code: String, sender: String, receivedAt: Long, eventId: String, source: String, trace: String) {
-        val host = context.getSharedPreferences("phoneinput_native", Context.MODE_PRIVATE)
-            .getString("host", "")?.trim()?.substringBefore(":")
-            ?.takeIf { it.matches(Regex("[0-9.]+")) }
-        if (host.isNullOrBlank()) {
-            OtpDiagnosticLog.record(context, Log.WARN, "source=$source event=forward_decision trace=$trace result=skip reason=no_saved_host")
-            return
-        }
+    private fun forwardOnce(context: Context, host: String, code: String, sender: String, receivedAt: Long, eventId: String, source: String, trace: String) {
         OtpDiagnosticLog.record(context, event = "source=$source event=forward_decision trace=$trace result=send hostConfigured=true")
         val body = JSONObject().put("code", code).put("sender", sender.take(120))
             .put("receivedAt", receivedAt).put("eventId", eventId).put("source", source).toString()
@@ -112,6 +114,10 @@ internal object OtpForwarder {
             if (attempt < 2) Thread.sleep(300L * (attempt + 1))
         }
     }
+
+    private fun savedHost(context: Context): String? = context.getSharedPreferences("phoneinput_native", Context.MODE_PRIVATE)
+        .getString("host", "")?.trim()?.substringBefore(":")
+        ?.takeIf { it.matches(Regex("[0-9.]+")) }
 
     private fun stableId(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
