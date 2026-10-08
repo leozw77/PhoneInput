@@ -74,6 +74,7 @@ type otpRequest struct {
 	Sender     string `json:"sender"`
 	ReceivedAt int64  `json:"receivedAt"`
 	EventID    string `json:"eventId"`
+	Source     string `json:"source"`
 }
 
 type server struct {
@@ -178,8 +179,16 @@ func (s *server) handleOTP(w http.ResponseWriter, r *http.Request) {
 	s.latestOTPMu.Lock()
 	s.latestOTP = record
 	s.latestOTPMu.Unlock()
-	// Deliberately do not log the verification code or notification body.
-	s.logger.Printf("OTP received; notification metadata accepted")
+	// Deliberately do not log the verification code, sender, notification body, or client IP.
+	source := request.Source
+	if source != "sms_broadcast" && source != "notification" {
+		source = "unknown"
+	}
+	trace := request.EventID
+	if len(trace) > 12 {
+		trace = trace[:12]
+	}
+	s.logger.Printf("OTP event=host_received source=%s trace=%s result=accepted", source, safeLogValue(trace, 12))
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
 }

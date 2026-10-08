@@ -8,28 +8,38 @@ import android.util.Log
 
 class OtpSmsReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        val appContext = context.applicationContext
+        val action = intent.action.orEmpty()
+        OtpDiagnosticLog.record(appContext, event = "source=sms_broadcast event=sms_receiver_enter action=${action.substringAfterLast('.')} appState=${OtpDiagnosticLog.foregroundState()}")
+        if (action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+            OtpDiagnosticLog.record(appContext, Log.WARN, "source=sms_broadcast event=sms_receiver_ignored reason=unexpected_action")
+            return
+        }
 
         val messages = runCatching { Telephony.Sms.Intents.getMessagesFromIntent(intent) }
-            .onFailure { Log.w(TAG, "sms_broadcast_decode_failed") }
+            .onFailure { OtpDiagnosticLog.record(appContext, Log.ERROR, "source=sms_broadcast event=sms_parse_failed stage=decode reason=${it.javaClass.simpleName}") }
             .getOrNull()
             .orEmpty()
-        if (messages.isEmpty()) return
+        OtpDiagnosticLog.record(appContext, event = "source=sms_broadcast event=sms_parse_result parts=${messages.size}")
+        if (messages.isEmpty()) {
+            OtpDiagnosticLog.record(appContext, Log.WARN, "source=sms_broadcast event=sms_parse_no_message")
+            return
+        }
 
         val body = messages.joinToString(separator = "") { it.messageBody.orEmpty() }
-        val code = OtpForwarder.extractCode(body) ?: return
+        val code = OtpForwarder.extractCode(body)
+        OtpDiagnosticLog.record(appContext, event = "source=sms_broadcast event=sms_parse_result codeFound=${code != null}")
+        if (code == null) return
         val sender = messages.firstOrNull()?.displayOriginatingAddress.orEmpty().ifBlank { "未知发件人" }
         val receivedAt = messages.firstOrNull()?.timestampMillis?.takeIf { it > 0 }
             ?: System.currentTimeMillis()
         val sourceId = "sms:$sender:$receivedAt:$code"
+        val traceId = OtpForwarder.newTraceId()
+        OtpDiagnosticLog.record(appContext, event = "source=sms_broadcast event=sms_code_detected trace=${traceId.take(12)}")
 
         val pending = goAsync()
-        OtpForwarder.forward(context.applicationContext, code, sender, receivedAt, sourceId) {
+        OtpForwarder.forward(appContext, code, sender, receivedAt, sourceId, "sms_broadcast", traceId) {
             pending.finish()
         }
-    }
-
-    companion object {
-        private const val TAG = "PhoneInputOTP"
     }
 }

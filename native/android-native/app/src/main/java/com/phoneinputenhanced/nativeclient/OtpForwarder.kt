@@ -30,13 +30,17 @@ internal object OtpForwarder {
         sender: String,
         receivedAt: Long,
         sourceId: String,
+        source: String,
+        traceId: String,
         onComplete: () -> Unit = {},
     ) {
         val sourceKey = stableId(sourceId)
+        val trace = traceId.take(12)
         val now = System.currentTimeMillis()
         val codeKey = "${sender.trim().lowercase()}:$code"
         synchronized(seenSources) {
             if (seenSources.containsKey(sourceKey)) {
+                OtpDiagnosticLog.record(context, event = "source=$source event=forward_decision trace=$trace result=skip reason=duplicate_source")
                 onComplete()
                 return
             }
@@ -47,7 +51,7 @@ internal object OtpForwarder {
             val previous = seenCodes.put(codeKey, now)
             while (seenCodes.size > 256) seenCodes.remove(seenCodes.keys.first())
             if (previous != null && now - previous <= DEDUPE_WINDOW_MS) {
-                Log.i(TAG, "otp_duplicate_suppressed")
+                OtpDiagnosticLog.record(context, event = "source=$source event=forward_decision trace=$trace result=skip reason=duplicate_code")
                 onComplete()
                 return
             }
@@ -55,24 +59,26 @@ internal object OtpForwarder {
 
         io.execute {
             try {
-                forwardOnce(context, code, sender, receivedAt, sourceKey)
+                forwardOnce(context, code, sender, receivedAt, traceId, source, trace)
             } finally {
                 onComplete()
             }
         }
     }
 
-    private fun forwardOnce(context: Context, code: String, sender: String, receivedAt: Long, eventId: String) {
+    private fun forwardOnce(context: Context, code: String, sender: String, receivedAt: Long, eventId: String, source: String, trace: String) {
         val host = context.getSharedPreferences("phoneinput_native", Context.MODE_PRIVATE)
             .getString("host", "")?.trim()?.substringBefore(":")
             ?.takeIf { it.matches(Regex("[0-9.]+")) }
         if (host.isNullOrBlank()) {
-            Log.w(TAG, "otp_forward_skipped; reason=no_saved_host")
+            OtpDiagnosticLog.record(context, Log.WARN, "source=$source event=forward_decision trace=$trace result=skip reason=no_saved_host")
             return
         }
+        OtpDiagnosticLog.record(context, event = "source=$source event=forward_decision trace=$trace result=send hostConfigured=true")
         val body = JSONObject().put("code", code).put("sender", sender.take(120))
-            .put("receivedAt", receivedAt).put("eventId", eventId).toString()
+            .put("receivedAt", receivedAt).put("eventId", eventId).put("source", source).toString()
         for (attempt in 0..2) {
+            val startedAt = System.nanoTime()
             val connection = URL("http://$host:51877/api/otp").openConnection() as HttpURLConnection
             try {
                 connection.requestMethod = "POST"
@@ -82,13 +88,20 @@ internal object OtpForwarder {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
+                val durationMs = (System.nanoTime() - startedAt) / 1_000_000
+                OtpDiagnosticLog.record(context, if (status in 200..299) Log.INFO else Log.WARN,
+                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs httpStatus=$status")
                 if (status in 200..299) {
-                    Log.i(TAG, "otp_forwarded; status=$status")
+                    OtpDiagnosticLog.record(context, event = "source=$source event=forward_result trace=$trace result=success attempts=${attempt + 1}")
                     return
                 }
-                if (attempt == 2) Log.w(TAG, "otp_forward_failed; status=$status")
+                if (attempt == 2) OtpDiagnosticLog.record(context, Log.ERROR, "source=$source event=forward_result trace=$trace result=failed reason=http_status")
             } catch (error: Exception) {
-                if (attempt == 2) Log.w(TAG, "otp_forward_failed; reason=${error.javaClass.simpleName}")
+                val durationMs = (System.nanoTime() - startedAt) / 1_000_000
+                OtpDiagnosticLog.record(context, Log.WARN,
+                    "source=$source event=forward_attempt trace=$trace attempt=${attempt + 1} durationMs=$durationMs exception=${error.javaClass.simpleName}")
+                if (attempt == 2) OtpDiagnosticLog.record(context, Log.ERROR,
+                    "source=$source event=forward_result trace=$trace result=failed reason=${error.javaClass.simpleName}")
             } finally {
                 connection.disconnect()
             }
@@ -100,6 +113,7 @@ internal object OtpForwarder {
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
 
+    fun newTraceId(): String = java.util.UUID.randomUUID().toString().replace("-", "")
+
     private const val DEDUPE_WINDOW_MS = 5 * 60 * 1000L
-    private const val TAG = "PhoneInputOTP"
 }

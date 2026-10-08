@@ -36,15 +36,18 @@ class OtpNotificationListener : NotificationListenerService() {
                 ?.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotBlank) }?.let(::addAll)
             notification.tickerText?.toString()?.trim()?.takeIf(String::isNotBlank)?.let(::add)
         }.distinct().joinToString("\n").take(4000)
-        val code = OtpForwarder.extractCode(text) ?: return
+        val code = OtpForwarder.extractCode(text)
+        OtpDiagnosticLog.record(this, event = "source=notification event=notification_parse_result codeFound=${code != null}")
+        if (code == null) return
 
         val sender = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
             .ifBlank { sbn.packageName }
         val receivedAt = sbn.postTime.takeIf { it > 0 } ?: System.currentTimeMillis()
-        Log.i(TAG, "otp_notification_detected; codeFound=true")
         // A notification's postTime can change when the messaging app updates the same alert.
         val sourceId = "notification:${sbn.key}:$code"
-        OtpForwarder.forward(this, code, sender, receivedAt, sourceId)
+        val traceId = OtpForwarder.newTraceId()
+        OtpDiagnosticLog.record(this, event = "source=notification event=notification_detected trace=${traceId.take(12)}")
+        OtpForwarder.forward(this, code, sender, receivedAt, sourceId, "notification", traceId)
     }
 
     companion object { private const val TAG = "PhoneInputOTP" }

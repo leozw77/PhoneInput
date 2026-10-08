@@ -11,6 +11,12 @@ This preview adds background SMS broadcast reception and a notification listener
 
 The SMS or notification body is neither stored nor sent to the computer. A shared in-memory deduplicator suppresses notification updates with changed `postTime` and near-simultaneous SMS/notification duplicates. The host log does not contain the code or sender. The Windows panel does not open with each message and does not invoke the Windows on-screen keyboard. The panel uses a non-activating window so its buttons can send text to the window that was active before the panel was opened.
 
+## OTP diagnostics
+
+The Android preview mirrors privacy-safe flow events to logcat (`PhoneInputOTP`) and to the bounded app-private file `files/otp-diagnostics.log` (maximum 256 KiB, trimmed to the newest 128 KiB). Events identify the source (`sms_broadcast` or `notification`), parse outcome, configured-host decision, deduplication decision, each HTTP attempt and result. A random trace ID links those events to the Windows Host's `OTP event=host_received` entry. No OTP, message body, sender, notification key, or PC IP is written to these diagnostics.
+
+For the debug preview package, the file can be read without opening the app using Android's `run-as` for `com.phoneinputenhanced.nativeclient.otpPreview2`, or the same events can be collected from logcat. This makes it possible to tell whether a background SMS broadcast reached the receiver, whether it contained a recognizable code, and where forwarding stopped.
+
 ## Preview installation
 
 - Install `PhoneInputEnhanced-OTP-Preview.apk` alongside the existing stable app. It uses the separate `com.phoneinputenhanced.nativeclient.otpPreview2` preview package ID and has its own settings; the earlier `.otpPreview` install remains untouched.
