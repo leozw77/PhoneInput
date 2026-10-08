@@ -30,7 +30,7 @@ internal object OtpDiagnosticLog {
             synchronized(lock) {
                 val file = File(context.filesDir, FILE_NAME)
                 if (file.exists() && file.length() + line.toByteArray(Charsets.UTF_8).size > MAX_BYTES) {
-                    val tail = file.readBytes().takeLast(KEEP_BYTES.toInt())
+                    val tail = file.readBytes().takeLast(KEEP_BYTES.toInt()).toByteArray()
                     file.writeBytes(tail)
                 }
                 file.appendText(line, Charsets.UTF_8)
